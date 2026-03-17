@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import type { ProxySession } from "../types";
+import ContextMenu from "./ContextMenu.vue";
 
 defineProps<{
   sessions: readonly ProxySession[];
@@ -8,7 +10,34 @@ defineProps<{
 
 const emit = defineEmits<{
   select: [session: ProxySession];
+  copyUrl: [session: ProxySession];
+  replay: [session: ProxySession];
+  addAutoResponse: [session: ProxySession];
 }>();
+
+const ctxMenu = ref<{ session: ProxySession; x: number; y: number } | null>(
+  null,
+);
+
+const menuItems = [
+  { label: "Copy URL", icon: "📋", action: "copy-url" },
+  { label: "Replay", icon: "🔁", action: "replay" },
+  { label: "Add to Auto Responder", icon: "⚡", action: "add-auto-response" },
+];
+
+function onContextMenu(e: MouseEvent, session: ProxySession) {
+  e.preventDefault();
+  ctxMenu.value = { session, x: e.clientX, y: e.clientY };
+}
+
+function onMenuSelect(action: string) {
+  if (!ctxMenu.value) return;
+  const session = ctxMenu.value.session;
+  ctxMenu.value = null;
+  if (action === "copy-url") emit("copyUrl", session);
+  else if (action === "replay") emit("replay", session);
+  else if (action === "add-auto-response") emit("addAutoResponse", session);
+}
 
 function methodClass(m: string) {
   return ["GET", "POST", "PUT", "DELETE", "PATCH"].includes(m) ? m : "";
@@ -43,6 +72,7 @@ function isAutoResponse(s: ProxySession) {
           :key="s.id"
           :class="{ selected: s.id === selectedId }"
           @click="emit('select', s)"
+          @contextmenu="onContextMenu($event, s)"
         >
           <td class="col-method" :class="methodClass(s.method)">
             {{ s.method }}
@@ -67,6 +97,15 @@ function isAutoResponse(s: ProxySession) {
       No requests yet.<br />
       Configure your browser/app to use proxy <strong>localhost:8888</strong>
     </div>
+
+    <ContextMenu
+      v-if="ctxMenu"
+      :items="menuItems"
+      :x="ctxMenu.x"
+      :y="ctxMenu.y"
+      @select="onMenuSelect"
+      @close="ctxMenu = null"
+    />
   </div>
 </template>
 

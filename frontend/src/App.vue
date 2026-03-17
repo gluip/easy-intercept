@@ -13,6 +13,7 @@ const {
   connect,
   loadSessions,
   clearSessions,
+  replaySession,
 } = useProxy();
 
 const selected = ref<ProxySession | null>(null);
@@ -30,6 +31,15 @@ function handleClear() {
 function handleAddAutoResponse(session: ProxySession) {
   pendingSession.value = session;
   tab.value = "autoresponder";
+}
+
+function handleCopyUrl(session: ProxySession) {
+  navigator.clipboard.writeText(session.url);
+}
+
+async function handleReplay(session: ProxySession) {
+  await replaySession(session.id);
+  await loadSessions();
 }
 
 onMounted(async () => {
@@ -75,6 +85,9 @@ onMounted(async () => {
         :sessions="sessions"
         :selected-id="selected?.id ?? null"
         @select="selectSession"
+        @copy-url="handleCopyUrl"
+        @replay="handleReplay"
+        @add-auto-response="handleAddAutoResponse"
       />
 
       <SessionDetail

@@ -68,6 +68,11 @@ async function deleteRule(id: string) {
   rules.value = rules.value.filter((r) => r.id !== id);
 }
 
+async function replaySession(id: string) {
+  const r = await fetch(`/api/sessions/${id}/replay`, { method: "POST" });
+  return r.json();
+}
+
 export function useProxy() {
   return {
     sessions: readonly(sessions),
@@ -81,5 +86,6 @@ export function useProxy() {
     createRule,
     updateRule,
     deleteRule,
+    replaySession,
   };
 }

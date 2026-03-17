@@ -20,6 +20,13 @@ builder.Services.AddHttpClient("proxy").ConfigurePrimaryHttpMessageHandler(() =>
         UseProxy = false,
     });
 
+builder.Services.AddHttpClient("replay").ConfigurePrimaryHttpMessageHandler(() =>
+    new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false,
+    });
+
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<PinStore>();
 builder.Services.AddSingleton<AutoResponderStore>();
@@ -35,6 +42,27 @@ app.MapHub<ProxyHub>("/proxy-hub");
 
 app.MapGet("/api/sessions", (SessionStore store) =>
     Results.Ok(store.GetAll()));
+
+app.MapPost("/api/sessions/{id:guid}/replay", async (Guid id, SessionStore store, IHttpClientFactory httpFactory) =>
+{
+    var session = store.Get(id);
+    if (session is null) return Results.NotFound();
+
+    using var client = httpFactory.CreateClient("replay");
+    var request = new HttpRequestMessage(new HttpMethod(session.Method), session.Url);
+    foreach (var (k, v) in session.RequestHeaders)
+    {
+        if (k.Equals("Host", StringComparison.OrdinalIgnoreCase)) continue;
+        request.Headers.TryAddWithoutValidation(k, v);
+    }
+    if (!string.IsNullOrEmpty(session.RequestBody))
+        request.Content = new StringContent(session.RequestBody, System.Text.Encoding.UTF8,
+            session.RequestHeaders.GetValueOrDefault("Content-Type", "application/octet-stream"));
+
+    var resp = await client.SendAsync(request);
+    var body = await resp.Content.ReadAsStringAsync();
+    return Results.Ok(new { status = (int)resp.StatusCode, body });
+});
 
 app.MapPost("/api/sessions/{id:guid}/pin", (Guid id, SessionStore store, PinStore pins) =>
 {
