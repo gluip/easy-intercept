@@ -128,7 +128,10 @@ function onKeyDown(e: KeyboardEvent) {
         emit("select", [...props.selectedIds, nextId]);
       } else {
         // shrink selection when going back
-        emit("select", props.selectedIds.filter((id) => id !== lastSelected));
+        emit(
+          "select",
+          props.selectedIds.filter((id) => id !== lastSelected),
+        );
       }
     } else {
       emit("select", [nextId]);
