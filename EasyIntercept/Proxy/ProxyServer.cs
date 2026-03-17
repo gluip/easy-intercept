@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using EasyIntercept.Certificates;
 using EasyIntercept.Hubs;
 using EasyIntercept.Pins;
 using EasyIntercept.Storage;
@@ -14,19 +15,22 @@ public class ProxyServer : BackgroundService
     private readonly PinStore _pins;
     private readonly IHubContext<ProxyHub> _hub;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly CertificateService _certs;
 
     public ProxyServer(
         ILogger<ProxyServer> logger,
         SessionStore sessions,
         PinStore pins,
         IHubContext<ProxyHub> hub,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        CertificateService certs)
     {
         _logger = logger;
         _sessions = sessions;
         _pins = pins;
         _hub = hub;
         _httpClientFactory = httpClientFactory;
+        _certs = certs;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -56,7 +60,7 @@ public class ProxyServer : BackgroundService
 
             _ = Task.Run(async () =>
             {
-                var conn = new ProxyConnection(client, _sessions, _pins, _hub, _httpClientFactory);
+                var conn = new ProxyConnection(client, _sessions, _pins, _hub, _httpClientFactory, _certs);
                 try
                 {
                     await conn.HandleAsync();

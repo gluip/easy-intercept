@@ -1,6 +1,9 @@
 using System.Diagnostics;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using EasyIntercept.Certificates;
 using EasyIntercept.Hubs;
 using EasyIntercept.Models;
 using EasyIntercept.Pins;
@@ -22,19 +25,22 @@ public class ProxyConnection
     private readonly PinStore _pins;
     private readonly IHubContext<ProxyHub> _hub;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly CertificateService _certs;
 
     public ProxyConnection(
         TcpClient client,
         SessionStore sessions,
         PinStore pins,
         IHubContext<ProxyHub> hub,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        CertificateService certs)
     {
         _client = client;
         _sessions = sessions;
         _pins = pins;
         _hub = hub;
         _httpClientFactory = httpClientFactory;
+        _certs = certs;
     }
 
     public async Task HandleAsync()
@@ -79,10 +85,70 @@ public class ProxyConnection
 
         if (method.Equals("CONNECT", StringComparison.OrdinalIgnoreCase))
         {
-            await WriteRaw(stream, "HTTP/1.1 405 HTTPS Not Supported\r\nConnection: close\r\n\r\n");
+            await HandleConnect(stream, url);
             return;
         }
 
+        // Plain HTTP — forward directly
+        await ForwardRequest(stream, method, url, lines, buf, headerEnd, filled);
+    }
+
+    private async Task HandleConnect(NetworkStream rawStream, string hostPort)
+    {
+        // url is "host:port"
+        var host = hostPort.Contains(':') ? hostPort[..hostPort.IndexOf(':')] : hostPort;
+
+        // Tell client the tunnel is established
+        await WriteRaw(rawStream, "HTTP/1.1 200 Connection Established\r\n\r\n");
+
+        // Wrap client side with SslStream using our generated cert
+        var cert = _certs.GetCertificateForHost(host);
+        var clientSsl = new SslStream(rawStream, leaveInnerStreamOpen: true);
+        await clientSsl.AuthenticateAsServerAsync(cert);
+
+        // Now read the actual HTTP request from the SSL stream
+        var buf = new byte[8192];
+        var filled = 0;
+        var headerEnd = -1;
+
+        while (filled < buf.Length)
+        {
+            var n = await clientSsl.ReadAsync(buf.AsMemory(filled, buf.Length - filled));
+            if (n == 0) return;
+            filled += n;
+
+            for (var i = Math.Max(0, filled - n - 3); i <= filled - 4; i++)
+            {
+                if (buf[i] == '\r' && buf[i + 1] == '\n' && buf[i + 2] == '\r' && buf[i + 3] == '\n')
+                {
+                    headerEnd = i;
+                    break;
+                }
+            }
+            if (headerEnd >= 0) break;
+        }
+
+        if (headerEnd < 0) return;
+
+        var headerText = Encoding.ASCII.GetString(buf, 0, headerEnd);
+        var lines = headerText.Split("\r\n");
+        if (lines.Length == 0) return;
+
+        var reqLine = lines[0].Split(' ');
+        if (reqLine.Length < 2) return;
+
+        var method = reqLine[0];
+        var path = reqLine[1]; // relative path like "/get"
+        var fullUrl = $"https://{host}{path}";
+
+        await ForwardRequest(clientSsl, method, fullUrl, lines, buf, headerEnd, filled);
+
+        await clientSsl.ShutdownAsync();
+        clientSsl.Dispose();
+    }
+
+    private async Task ForwardRequest(Stream stream, string method, string url, string[] lines, byte[] buf, int headerEnd, int filled)
+    {
         var reqHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         for (var i = 1; i < lines.Length; i++)
         {
@@ -185,8 +251,10 @@ public class ProxyConnection
             await stream.WriteAsync(respBody);
 
             // Log session
-            var isText = respHeaders.TryGetValue("Content-Type", out var rct)
-                && (rct.Contains("text/") || rct.Contains("json") || rct.Contains("xml"));
+            var isText = respBody.Length == 0
+                || respBody.Length <= 4096
+                || (respHeaders.TryGetValue("Content-Type", out var rct)
+                    && (rct.Contains("text/") || rct.Contains("json") || rct.Contains("xml") || rct.Contains("javascript")));
 
             var session = new ProxySession
             {
@@ -207,4 +275,14 @@ public class ProxyConnection
 
     private static async Task WriteRaw(Stream stream, string text) =>
         await stream.WriteAsync(Encoding.ASCII.GetBytes(text));
+
+    private static (int headerEnd, int filled) FindHeaderEnd(byte[] buf, int filled)
+    {
+        for (var i = 0; i <= filled - 4; i++)
+        {
+            if (buf[i] == '\r' && buf[i + 1] == '\n' && buf[i + 2] == '\r' && buf[i + 3] == '\n')
+                return (i, filled);
+        }
+        return (-1, filled);
+    }
 }

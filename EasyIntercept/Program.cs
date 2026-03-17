@@ -1,3 +1,4 @@
+using EasyIntercept.Certificates;
 using EasyIntercept.Hubs;
 using EasyIntercept.Pins;
 using EasyIntercept.Proxy;
@@ -20,6 +21,7 @@ builder.Services.AddHttpClient("proxy").ConfigurePrimaryHttpMessageHandler(() =>
 
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<PinStore>();
+builder.Services.AddSingleton<CertificateService>();
 builder.Services.AddHostedService<ProxyServer>();
 
 var app = builder.Build();
@@ -55,5 +57,12 @@ app.MapDelete("/api/pins", (string url, PinStore pins) =>
 
 app.MapGet("/api/pins", (PinStore pins) =>
     Results.Ok(pins.GetAll()));
+
+app.MapGet("/ca", (CertificateService certs) =>
+{
+    var path = certs.CaCertPath;
+    if (!File.Exists(path)) return Results.NotFound();
+    return Results.Bytes(File.ReadAllBytes(path), "application/x-x509-ca-cert", "easyntercept-ca.crt");
+});
 
 await app.RunAsync();

@@ -70,6 +70,40 @@ else
   fail "No session to pin"
 fi
 
+# --- HTTPS tests ---
+
+# 8. CA cert endpoint
+CA_CERT=$(curl -sf --max-time 3 -o /tmp/easyntercept-ca.crt "$API/ca" && echo "ok")
+if [[ "$CA_CERT" == "ok" ]] && head -1 /tmp/easyntercept-ca.crt | grep -q "BEGIN CERTIFICATE"; then
+  pass "CA cert downloadable (/ca endpoint)"
+else
+  fail "CA cert endpoint broken"
+fi
+
+# 9. HTTPS proxy — forward request (relies on CA being installed in system keychain)
+HTTPS_BODY=$(curl -sf --max-time 20 -x "$PROXY" https://httpbin.org/get)
+if echo "$HTTPS_BODY" | grep -q '"url"'; then
+  pass "HTTPS proxy forwards request (httpbin.org/get)"
+else
+  fail "HTTPS proxy did not return expected response"
+fi
+
+# 10. HTTPS session was stored
+HTTPS_COUNT=$(curl -sf --max-time 3 "$API/api/sessions" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len([s for s in d if s['url'].startswith('https://')]))")
+if [[ $HTTPS_COUNT -gt 0 ]]; then
+  pass "HTTPS session stored in memory ($HTTPS_COUNT sessions)"
+else
+  fail "No HTTPS sessions stored"
+fi
+
+
+HTTPS_BODY=$(curl -sf --max-time 20 -x "$PROXY" https://nos.nl)
+if echo "$HTTPS_BODY" | grep -q 'nos'; then
+  pass "HTTPS proxy forwards request (nos.nl)"
+else
+  fail "HTTPS proxy did not return expected response (nos.nl)"
+fi
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]
