@@ -1,32 +1,32 @@
 <script setup lang="ts">
-import type { ProxySession } from '../types'
+import type { ProxySession } from "../types";
 
 const props = defineProps<{
-  session: ProxySession
-  pinned: boolean
-}>()
+  session: ProxySession;
+  pinned: boolean;
+}>();
 
 const emit = defineEmits<{
-  pin: [id: string]
-  unpin: [url: string]
-}>()
+  pin: [id: string];
+  unpin: [url: string];
+}>();
 
 function formatJson(obj: unknown): string {
   try {
-    if (typeof obj === 'string') {
-      const parsed = JSON.parse(obj)
-      return JSON.stringify(parsed, null, 2)
+    if (typeof obj === "string") {
+      const parsed = JSON.parse(obj);
+      return JSON.stringify(parsed, null, 2);
     }
-    return JSON.stringify(obj, null, 2)
+    return JSON.stringify(obj, null, 2);
   } catch {
-    return typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2)
+    return typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
   }
 }
 
 function isJson(s: string): boolean {
-  if (!s) return false
-  const trimmed = s.trimStart()
-  return trimmed.startsWith('{') || trimmed.startsWith('[')
+  if (!s) return false;
+  const trimmed = s.trimStart();
+  return trimmed.startsWith("{") || trimmed.startsWith("[");
 }
 </script>
 
@@ -39,7 +39,11 @@ function isJson(s: string): boolean {
     </div>
 
     <div class="actions">
-      <button v-if="pinned" class="unpin-btn" @click="emit('unpin', session.url)">
+      <button
+        v-if="pinned"
+        class="unpin-btn"
+        @click="emit('unpin', session.url)"
+      >
         📌 Unpin response
       </button>
       <button v-else class="pin-btn" @click="emit('pin', session.id)">
@@ -51,13 +55,21 @@ function isJson(s: string): boolean {
     <pre>{{ formatJson(session.requestHeaders) }}</pre>
 
     <h3>Request Body</h3>
-    <pre>{{ isJson(session.requestBody) ? formatJson(session.requestBody) : (session.requestBody || '(empty)') }}</pre>
+    <pre>{{
+      isJson(session.requestBody)
+        ? formatJson(session.requestBody)
+        : session.requestBody || "(empty)"
+    }}</pre>
 
     <h3>Response Headers</h3>
     <pre>{{ formatJson(session.responseHeaders) }}</pre>
 
     <h3>Response Body</h3>
-    <pre>{{ isJson(session.responseBody) ? formatJson(session.responseBody) : (session.responseBody || '(empty)') }}</pre>
+    <pre>{{
+      isJson(session.responseBody)
+        ? formatJson(session.responseBody)
+        : session.responseBody || "(empty)"
+    }}</pre>
   </div>
 </template>
 

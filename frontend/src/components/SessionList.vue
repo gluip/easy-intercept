@@ -1,24 +1,24 @@
 <script setup lang="ts">
-import type { ProxySession } from '../types'
+import type { ProxySession } from "../types";
 
 defineProps<{
-  sessions: readonly ProxySession[]
-  selectedId: string | null
-}>()
+  sessions: readonly ProxySession[];
+  selectedId: string | null;
+}>();
 
 const emit = defineEmits<{
-  select: [session: ProxySession]
-}>()
+  select: [session: ProxySession];
+}>();
 
 function methodClass(m: string) {
-  return ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].includes(m) ? m : ''
+  return ["GET", "POST", "PUT", "DELETE", "PATCH"].includes(m) ? m : "";
 }
 
 function statusClass(s: number) {
-  if (s >= 500) return 's5'
-  if (s >= 400) return 's4'
-  if (s >= 300) return 's3'
-  return 's2'
+  if (s >= 500) return "s5";
+  if (s >= 400) return "s4";
+  if (s >= 300) return "s3";
+  return "s2";
 }
 </script>
 
@@ -40,8 +40,12 @@ function statusClass(s: number) {
           :class="{ selected: s.id === selectedId }"
           @click="emit('select', s)"
         >
-          <td class="col-method" :class="methodClass(s.method)">{{ s.method }}</td>
-          <td class="col-status" :class="statusClass(s.responseStatus)">{{ s.responseStatus }}</td>
+          <td class="col-method" :class="methodClass(s.method)">
+            {{ s.method }}
+          </td>
+          <td class="col-status" :class="statusClass(s.responseStatus)">
+            {{ s.responseStatus }}
+          </td>
           <td class="col-url" :title="s.url">{{ s.url }}</td>
           <td class="col-dur">{{ s.durationMs }}</td>
         </tr>
@@ -113,16 +117,34 @@ td {
   color: #858585;
 }
 
-.GET { color: #4ec9b0; }
-.POST { color: #dcdcaa; }
-.PUT { color: #ce9178; }
-.DELETE { color: #f44747; }
-.PATCH { color: #c586c0; }
+.GET {
+  color: #4ec9b0;
+}
+.POST {
+  color: #dcdcaa;
+}
+.PUT {
+  color: #ce9178;
+}
+.DELETE {
+  color: #f44747;
+}
+.PATCH {
+  color: #c586c0;
+}
 
-.s2 { color: #4ec9b0; }
-.s3 { color: #9cdcfe; }
-.s4 { color: #f44747; }
-.s5 { color: #ce9178; }
+.s2 {
+  color: #4ec9b0;
+}
+.s3 {
+  color: #9cdcfe;
+}
+.s4 {
+  color: #f44747;
+}
+.s5 {
+  color: #ce9178;
+}
 
 .empty-state {
   padding: 40px;

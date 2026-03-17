@@ -1,36 +1,46 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import type { ProxySession } from './types'
-import { useProxy } from './composables/useProxy'
-import SessionList from './components/SessionList.vue'
-import SessionDetail from './components/SessionDetail.vue'
+import { ref, onMounted } from "vue";
+import type { ProxySession } from "./types";
+import { useProxy } from "./composables/useProxy";
+import SessionList from "./components/SessionList.vue";
+import SessionDetail from "./components/SessionDetail.vue";
 
-const { sessions, connected, connect, loadSessions, loadPins, pinSession, unpinUrl, clearSessions, isPinned } = useProxy()
+const {
+  sessions,
+  connected,
+  connect,
+  loadSessions,
+  loadPins,
+  pinSession,
+  unpinUrl,
+  clearSessions,
+  isPinned,
+} = useProxy();
 
-const selected = ref<ProxySession | null>(null)
+const selected = ref<ProxySession | null>(null);
 
 function selectSession(s: ProxySession) {
-  selected.value = s
+  selected.value = s;
 }
 
 async function handlePin(id: string) {
-  await pinSession(id)
+  await pinSession(id);
 }
 
 async function handleUnpin(url: string) {
-  await unpinUrl(url)
+  await unpinUrl(url);
 }
 
 function handleClear() {
-  clearSessions()
-  selected.value = null
+  clearSessions();
+  selected.value = null;
 }
 
 onMounted(async () => {
-  await connect()
-  await loadSessions()
-  await loadPins()
-})
+  await connect();
+  await loadSessions();
+  await loadPins();
+});
 </script>
 
 <template>
@@ -59,14 +69,12 @@ onMounted(async () => {
         @pin="handlePin"
         @unpin="handleUnpin"
       />
-      <div v-else class="detail-placeholder">
-        Select a request to inspect
-      </div>
+      <div v-else class="detail-placeholder">Select a request to inspect</div>
     </div>
 
     <div class="status-bar">
       <span :class="{ disconnected: !connected }">
-        {{ connected ? '● Connected' : '✕ Disconnected' }}
+        {{ connected ? "● Connected" : "✕ Disconnected" }}
       </span>
       <span>{{ sessions.length }} requests</span>
     </div>
@@ -83,7 +91,7 @@ onMounted(async () => {
 }
 
 body {
-  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
   background: #1e1e1e;
   color: #d4d4d4;
   overflow: hidden;
