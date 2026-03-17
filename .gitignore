@@ -1,0 +1,23 @@
+# Build output
+bin/
+obj/
+
+# Runtime data
+*.db
+*.db-shm
+*.db-wal
+easyntercept-ca.pfx
+easyntercept-ca.crt
+
+# VS / Rider
+.vs/
+.idea/
+*.user
+*.suo
+
+# dotnet
+*.swp
+project.lock.json
+
+# macOS
+.DS_Store

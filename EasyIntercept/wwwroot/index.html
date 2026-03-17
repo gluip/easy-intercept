@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>EasyIntercept</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      background: #252526;
+      border-bottom: 1px solid #3e3e42;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 14px; color: #4ec9b0; }
+    header small { color: #858585; font-size: 12px; }
+
+    #toolbar {
+      background: #2d2d30;
+      border-bottom: 1px solid #3e3e42;
+      padding: 6px 16px;
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    button {
+      background: #3e3e42;
+      color: #d4d4d4;
+      border: 1px solid #555;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+    }
+    button:hover { background: #4e4e52; }
+
+    #main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    #session-list {
+      width: 50%;
+      overflow-y: auto;
+      border-right: 1px solid #3e3e42;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th {
+      background: #252526;
+      color: #858585;
+      text-align: left;
+      padding: 6px 10px;
+      border-bottom: 1px solid #3e3e42;
+      position: sticky;
+      top: 0;
+    }
+    tbody tr { border-bottom: 1px solid #2a2a2a; cursor: pointer; }
+    tbody tr:hover { background: #2a2d2e; }
+    tbody tr.selected { background: #094771; }
+    td { padding: 5px 10px; white-space: nowrap; overflow: hidden; max-width: 0; }
+
+    .col-method { width: 60px; font-weight: bold; }
+    .col-status { width: 44px; }
+    .col-url    { width: 60%; text-overflow: ellipsis; overflow: hidden; }
+    .col-dur    { width: 56px; text-align: right; color: #858585; }
+
+    .GET    { color: #4ec9b0; }
+    .POST   { color: #dcdcaa; }
+    .PUT    { color: #ce9178; }
+    .DELETE { color: #f44747; }
+    .PATCH  { color: #c586c0; }
+
+    .s2 { color: #4ec9b0; }
+    .s3 { color: #9cdcfe; }
+    .s4 { color: #f44747; }
+    .s5 { color: #ce9178; }
+
+    .pinned-marker { color: #e5c07b; margin-left: 4px; }
+
+    #detail {
+      width: 50%;
+      overflow-y: auto;
+      padding: 14px 16px;
+      font-size: 12px;
+    }
+    #detail h2 { font-size: 13px; color: #4ec9b0; margin-bottom: 10px; word-break: break-all; }
+    #detail h3 { font-size: 11px; color: #858585; text-transform: uppercase; margin: 12px 0 4px; letter-spacing: 0.05em; }
+    #detail pre {
+      background: #252526;
+      border: 1px solid #3e3e42;
+      padding: 8px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      border-radius: 3px;
+      max-height: 200px;
+    }
+    #detail .meta { color: #858585; margin-bottom: 10px; }
+    #detail .actions { display: flex; gap: 8px; margin: 10px 0; }
+    .pin-btn { background: #1e3a5f; color: #4ec9b0; border-color: #4ec9b0; }
+    .pin-btn:hover { background: #4ec9b0; color: #1e1e1e; }
+    .unpin-btn { background: #3e1e1e; color: #f44747; border-color: #f44747; }
+    .unpin-btn:hover { background: #f44747; color: white; }
+
+    #status-bar {
+      background: #007acc;
+      color: white;
+      padding: 3px 12px;
+      font-size: 11px;
+      display: flex;
+      gap: 20px;
+      flex-shrink: 0;
+    }
+    #conn-status.disconnected { color: #ffcccc; }
+
+    #empty-state {
+      padding: 40px;
+      color: #555;
+      text-align: center;
+      font-size: 13px;
+      line-height: 2;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>EasyIntercept</h1>
+  <small>proxy → localhost:8888 &nbsp;|&nbsp; ui → localhost:8080</small>
+</header>
+
+<div id="toolbar">
+  <button onclick="clearSessions()">Clear</button>
+  <button onclick="loadSessions()">Reload</button>
+  <button onclick="showPins()">Pins</button>
+</div>
+
+<div id="main">
+  <div id="session-list">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-method">Method</th>
+          <th class="col-status">Status</th>
+          <th class="col-url">URL</th>
+          <th class="col-dur">ms</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div id="empty-state">No requests yet.<br>Configure your browser/app to use proxy <strong>localhost:8888</strong></div>
+  </div>
+
+  <div id="detail">
+    <div id="detail-placeholder" style="color:#555;padding:40px;text-align:center">Select a request to inspect</div>
+    <div id="detail-content" style="display:none"></div>
+  </div>
+</div>
+
+<div id="status-bar">
+  <span id="conn-status">⟳ Connecting…</span>
+  <span id="session-count">0 requests</span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
+<script>
+  const sessions = [];
+  let selectedId = null;
+
+  // ── SignalR ──────────────────────────────────────────────────────────────
+
+  const conn = new signalR.HubConnectionBuilder()
+    .withUrl('/proxy-hub')
+    .withAutomaticReconnect()
+    .build();
+
+  conn.on('NewSession', s => {
+    sessions.unshift(s);
+    prependRow(s);
+    document.getElementById('session-count').textContent = sessions.length + ' requests';
+    document.getElementById('empty-state').style.display = 'none';
+  });
+
+  conn.start()
+    .then(() => setStatus('● Connected', false))
+    .catch(() => setStatus('✕ Disconnected', true));
+
+  conn.onreconnected(() => setStatus('● Connected', false));
+  conn.onclose(()      => setStatus('✕ Disconnected', true));
+
+  function setStatus(text, disconnected) {
+    const el = document.getElementById('conn-status');
+    el.textContent = text;
+    el.className = disconnected ? 'disconnected' : '';
+  }
+
+  // ── Rendering ────────────────────────────────────────────────────────────
+
+  function methodClass(m) {
+    return ['GET','POST','PUT','DELETE','PATCH'].includes(m) ? m : '';
+  }
+
+  function statusClass(s) {
+    if (s >= 500) return 's5';
+    if (s >= 400) return 's4';
+    if (s >= 300) return 's3';
+    return 's2';
+  }
+
+  function prependRow(s) {
+    const tbody = document.getElementById('tbody');
+    const tr = makeRow(s);
+    tbody.prepend(tr);
+  }
+
+  function makeRow(s) {
+    const tr = document.createElement('tr');
+    tr.dataset.id = s.id;
+    if (s.id === selectedId) tr.classList.add('selected');
+
+    const pinMark = s._pinned ? '<span class="pinned-marker" title="Pinned">📌</span>' : '';
+
+    tr.innerHTML = `
+      <td class="col-method ${methodClass(s.method)}">${s.method}</td>
+      <td class="col-status ${statusClass(s.responseStatus)}">${s.responseStatus}</td>
+      <td class="col-url" title="${esc(s.url)}">${esc(s.url)}${pinMark}</td>
+      <td class="col-dur">${s.durationMs}</td>
+    `;
+    tr.addEventListener('click', () => showDetail(s));
+    return tr;
+  }
+
+  function showDetail(s) {
+    selectedId = s.id;
+    document.querySelectorAll('#tbody tr').forEach(r =>
+      r.classList.toggle('selected', r.dataset.id === s.id));
+
+    document.getElementById('detail-placeholder').style.display = 'none';
+    const content = document.getElementById('detail-content');
+    content.style.display = 'block';
+
+    const isPinned = isPinnedUrl(s.url);
+
+    content.innerHTML = `
+      <h2>${esc(s.method)} ${esc(s.url)}</h2>
+      <div class="meta">${s.responseStatus} · ${s.durationMs}ms · ${new Date(s.timestamp).toLocaleTimeString()}</div>
+      <div class="actions">
+        ${isPinned
+          ? `<button class="unpin-btn" onclick="unpinUrl('${esc(s.url)}')">📌 Unpin response</button>`
+          : `<button class="pin-btn" onclick="pinSession('${s.id}')">📌 Pin response</button>`
+        }
+      </div>
+
+      <h3>Request Headers</h3>
+      <pre>${esc(JSON.stringify(s.requestHeaders, null, 2))}</pre>
+
+      <h3>Request Body</h3>
+      <pre>${esc(s.requestBody || '(empty)')}</pre>
+
+      <h3>Response Headers</h3>
+      <pre>${esc(JSON.stringify(s.responseHeaders, null, 2))}</pre>
+
+      <h3>Response Body</h3>
+      <pre>${esc(s.responseBody || '(empty)')}</pre>
+    `;
+  }
+
+  // ── Pins ─────────────────────────────────────────────────────────────────
+
+  let pinnedUrls = new Set();
+
+  async function loadPins() {
+    const r = await fetch('/api/pins');
+    const data = await r.json();
+    pinnedUrls = new Set(Object.keys(data));
+  }
+
+  function isPinnedUrl(url) {
+    return pinnedUrls.has(url);
+  }
+
+  async function pinSession(id) {
+    await fetch(`/api/sessions/${id}/pin`, { method: 'POST' });
+    await loadPins();
+    const s = sessions.find(x => x.id === id);
+    if (s) showDetail(s);
+    alert('Response pinned. Future requests to this URL will receive the pinned response.');
+  }
+
+  async function unpinUrl(url) {
+    await fetch(`/api/pins?url=${encodeURIComponent(url)}`, { method: 'DELETE' });
+    await loadPins();
+    const s = sessions.find(x => x.url === url);
+    if (s) showDetail(s);
+  }
+
+  async function showPins() {
+    const r = await fetch('/api/pins');
+    const data = await r.json();
+    const keys = Object.keys(data);
+    if (keys.length === 0) { alert('No active pins.'); return; }
+    alert('Active pins:\n\n' + keys.join('\n'));
+  }
+
+  // ── Session management ───────────────────────────────────────────────────
+
+  function clearSessions() {
+    sessions.length = 0;
+    document.getElementById('tbody').innerHTML = '';
+    document.getElementById('empty-state').style.display = '';
+    document.getElementById('detail-placeholder').style.display = '';
+    document.getElementById('detail-content').style.display = 'none';
+    document.getElementById('session-count').textContent = '0 requests';
+    selectedId = null;
+  }
+
+  async function loadSessions() {
+    const r = await fetch('/api/sessions');
+    const data = await r.json();
+    document.getElementById('tbody').innerHTML = '';
+    sessions.length = 0;
+    for (const s of data) {
+      sessions.push(s);
+      document.getElementById('tbody').appendChild(makeRow(s));
+    }
+    document.getElementById('session-count').textContent = sessions.length + ' requests';
+    document.getElementById('empty-state').style.display = sessions.length ? 'none' : '';
+  }
+
+  // ── Utils ─────────────────────────────────────────────────────────────────
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+
+  loadSessions();
+  loadPins();
+</script>
+
+</body>
+</html>
