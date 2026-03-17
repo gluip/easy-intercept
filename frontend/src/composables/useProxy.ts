@@ -40,7 +40,9 @@ async function loadRules() {
   rules.value = await r.json();
 }
 
-async function createRule(rule: Partial<AutoResponderRule>): Promise<AutoResponderRule> {
+async function createRule(
+  rule: Partial<AutoResponderRule>,
+): Promise<AutoResponderRule> {
   const r = await fetch("/api/auto-responder", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

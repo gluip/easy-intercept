@@ -51,7 +51,12 @@ function isAutoResponse(s: ProxySession) {
             {{ s.responseStatus }}
           </td>
           <td class="col-url" :title="s.url">
-            <span v-if="isAutoResponse(s)" class="ar-badge" title="Auto Responder">⚡</span>
+            <span
+              v-if="isAutoResponse(s)"
+              class="ar-badge"
+              title="Auto Responder"
+              >⚡</span
+            >
             {{ s.url }}
           </td>
           <td class="col-dur">{{ s.durationMs }}</td>
