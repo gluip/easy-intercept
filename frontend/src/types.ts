@@ -16,6 +16,8 @@ export interface AutoResponderRule {
   name: string;
   method: string;
   urlPattern: string;
+  bodyPattern: string;
+  bodyPatternIsRegex: boolean;
   enabled: boolean;
   statusCode: number;
   contentType: string;

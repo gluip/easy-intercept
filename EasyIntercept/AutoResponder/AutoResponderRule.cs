@@ -6,6 +6,8 @@ public class AutoResponderRule
     public string Name { get; set; } = "";
     public string Method { get; set; } = "*";
     public string UrlPattern { get; set; } = "";
+    public string BodyPattern { get; set; } = "";
+    public bool BodyPatternIsRegex { get; set; } = false;
     public bool Enabled { get; set; } = true;
     public int StatusCode { get; set; } = 200;
     public string ContentType { get; set; } = "application/json";

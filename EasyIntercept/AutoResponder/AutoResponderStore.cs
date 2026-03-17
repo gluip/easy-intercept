@@ -16,7 +16,7 @@ public class AutoResponderStore
 
     public IEnumerable<AutoResponderRule> GetAll() => _rules.Values.ToArray();
 
-    public AutoResponderRule? Match(string method, string url)
+    public AutoResponderRule? Match(string method, string url, string requestBody)
     {
         foreach (var rule in _rules.Values)
         {
@@ -24,11 +24,31 @@ public class AutoResponderStore
             if (rule.Method != "*" && !rule.Method.Equals(method, StringComparison.OrdinalIgnoreCase)) continue;
             try
             {
-                if (Regex.IsMatch(url, rule.UrlPattern, RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(200)))
-                    return rule;
+                if (!Regex.IsMatch(url, rule.UrlPattern, RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(200)))
+                    continue;
             }
-            catch (RegexMatchTimeoutException) { }
-            catch (ArgumentException) { }
+            catch (RegexMatchTimeoutException) { continue; }
+            catch (ArgumentException) { continue; }
+
+            if (!string.IsNullOrEmpty(rule.BodyPattern))
+            {
+                if (rule.BodyPatternIsRegex)
+                {
+                    try
+                    {
+                        if (!Regex.IsMatch(requestBody, rule.BodyPattern, RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(200)))
+                            continue;
+                    }
+                    catch { continue; }
+                }
+                else
+                {
+                    if (!requestBody.Contains(rule.BodyPattern, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                }
+            }
+
+            return rule;
         }
         return null;
     }

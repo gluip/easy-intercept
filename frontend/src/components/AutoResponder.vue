@@ -13,6 +13,8 @@ const form = reactive({
   name: "",
   method: "*",
   urlPattern: "",
+  bodyPattern: "",
+  bodyPatternIsRegex: false,
   enabled: true,
   statusCode: 200,
   contentType: "application/json",
@@ -26,6 +28,8 @@ function selectRule(rule: AutoResponderRule) {
   form.name = rule.name;
   form.method = rule.method;
   form.urlPattern = rule.urlPattern;
+  form.bodyPattern = rule.bodyPattern;
+  form.bodyPatternIsRegex = rule.bodyPatternIsRegex;
   form.enabled = rule.enabled;
   form.statusCode = rule.statusCode;
   form.contentType = rule.contentType;
@@ -41,6 +45,8 @@ function handleNew() {
   form.name = "";
   form.method = "*";
   form.urlPattern = "";
+  form.bodyPattern = "";
+  form.bodyPatternIsRegex = false;
   form.enabled = true;
   form.statusCode = 200;
   form.contentType = "application/json";
@@ -64,6 +70,8 @@ async function handleSave() {
     name: form.name,
     method: form.method,
     urlPattern: form.urlPattern,
+    bodyPattern: form.bodyPattern,
+    bodyPatternIsRegex: form.bodyPatternIsRegex,
     enabled: form.enabled,
     statusCode: form.statusCode,
     contentType: form.contentType,
@@ -131,6 +139,8 @@ function prefillFromSession(session: import("../types").ProxySession) {
   form.name = `${session.method} ${url.pathname}`;
   form.method = session.method;
   form.urlPattern = url.pathname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  form.bodyPattern = "";
+  form.bodyPatternIsRegex = false;
   form.enabled = true;
   form.statusCode = session.responseStatus;
   form.contentType =
@@ -200,6 +210,28 @@ loadRules();
         <input
           v-model="form.urlPattern"
           placeholder="e.g. /api/users/\d+"
+          spellcheck="false"
+        />
+      </div>
+
+      <div class="field">
+        <label>
+          Request Body Match
+          <small>(leave empty to skip)</small>
+          <span class="format-buttons">
+            <button
+              class="fmt-btn"
+              :class="{ 'fmt-active': form.bodyPatternIsRegex }"
+              @click="form.bodyPatternIsRegex = !form.bodyPatternIsRegex"
+              :title="form.bodyPatternIsRegex ? 'Regex mode' : 'Contains mode'"
+            >
+              {{ form.bodyPatternIsRegex ? '.*' : 'Aa' }}
+            </button>
+          </span>
+        </label>
+        <input
+          v-model="form.bodyPattern"
+          :placeholder="form.bodyPatternIsRegex ? 'e.g. action\\s*:\\s*checkout' : 'e.g. userId'"
           spellcheck="false"
         />
       </div>

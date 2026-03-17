@@ -192,7 +192,8 @@ public class ProxyConnection
         }
 
         // Check auto-responder rules
-        var rule = _autoResponder.Match(method, url);
+        var reqBodyStr = reqBody.Length > 0 ? Encoding.UTF8.GetString(reqBody) : "";
+        var rule = _autoResponder.Match(method, url, reqBodyStr);
         if (rule != null)
         {
             var arBody = Encoding.UTF8.GetBytes(rule.Body);
