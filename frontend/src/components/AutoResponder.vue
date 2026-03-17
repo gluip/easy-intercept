@@ -200,44 +200,25 @@ loadRules();
     <div v-if="selected || isNew" class="rule-editor">
       <h3>{{ isNew ? "New Rule" : "Edit Rule" }}</h3>
 
-      <div class="field">
-        <label>Name</label>
-        <input v-model="form.name" placeholder="e.g. Mock user API" />
-      </div>
-
-      <div class="field">
-        <label>URL Pattern <small>(regex)</small></label>
-        <input
-          v-model="form.urlPattern"
-          placeholder="e.g. /api/users/\d+"
-          spellcheck="false"
-        />
-      </div>
-
-      <div class="field">
-        <label>
-          Request Body Match
-          <small>(leave empty to skip)</small>
-          <span class="format-buttons">
-            <button
-              class="fmt-btn"
-              :class="{ 'fmt-active': form.bodyPatternIsRegex }"
-              @click="form.bodyPatternIsRegex = !form.bodyPatternIsRegex"
-              :title="form.bodyPatternIsRegex ? 'Regex mode' : 'Contains mode'"
-            >
-              {{ form.bodyPatternIsRegex ? '.*' : 'Aa' }}
-            </button>
-          </span>
-        </label>
-        <input
-          v-model="form.bodyPattern"
-          :placeholder="form.bodyPatternIsRegex ? 'e.g. action\\s*:\\s*checkout' : 'e.g. userId'"
-          spellcheck="false"
-        />
-      </div>
+      <!-- ── Filters ── -->
+      <div class="section-label">Match</div>
 
       <div class="field-row">
         <div class="field">
+          <label>Name</label>
+          <input v-model="form.name" placeholder="e.g. Mock user API" />
+        </div>
+        <div class="field" style="flex: 0 0 auto; width: 100px">
+          <label>Enabled</label>
+          <label class="switch">
+            <input type="checkbox" v-model="form.enabled" />
+            <span>{{ form.enabled ? "Yes" : "No" }}</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field" style="flex: 0 0 auto; width: 110px">
           <label>Method</label>
           <select v-model="form.method">
             <option value="*">Any</option>
@@ -249,6 +230,46 @@ loadRules();
           </select>
         </div>
         <div class="field">
+          <label>URL Pattern <small>(regex)</small></label>
+          <input
+            v-model="form.urlPattern"
+            placeholder="e.g. /api/users/\d+"
+            spellcheck="false"
+          />
+        </div>
+      </div>
+
+      <div class="field">
+        <label>
+          Request Body
+          <small>(leave empty to skip)</small>
+          <span class="format-buttons">
+            <button
+              class="fmt-btn"
+              :class="{ 'fmt-active': form.bodyPatternIsRegex }"
+              @click="form.bodyPatternIsRegex = !form.bodyPatternIsRegex"
+              :title="form.bodyPatternIsRegex ? 'Regex mode' : 'Contains mode'"
+            >
+              {{ form.bodyPatternIsRegex ? ".*" : "Aa" }}
+            </button>
+          </span>
+        </label>
+        <input
+          v-model="form.bodyPattern"
+          :placeholder="
+            form.bodyPatternIsRegex
+              ? 'e.g. action\\s*:\\s*checkout'
+              : 'e.g. userId'
+          "
+          spellcheck="false"
+        />
+      </div>
+
+      <!-- ── Response ── -->
+      <div class="section-label">Response</div>
+
+      <div class="field-row">
+        <div class="field" style="flex: 0 0 auto; width: 80px">
           <label>Status</label>
           <input v-model.number="form.statusCode" type="number" class="short" />
         </div>
@@ -256,17 +277,10 @@ loadRules();
           <label>Content-Type</label>
           <input v-model="form.contentType" />
         </div>
-        <div class="field">
-          <label>Enabled</label>
-          <label class="switch">
-            <input type="checkbox" v-model="form.enabled" />
-            <span>{{ form.enabled ? "Yes" : "No" }}</span>
-          </label>
-        </div>
       </div>
 
       <div class="field">
-        <label>Custom Headers <small>(Key: Value per line)</small></label>
+        <label>Headers <small>(Key: Value per line)</small></label>
         <textarea
           v-model="form.headersText"
           rows="3"
@@ -277,7 +291,7 @@ loadRules();
 
       <div class="field">
         <label>
-          Response Body
+          Body
           <span class="format-buttons">
             <button class="fmt-btn" @click="formatJson" title="Format as JSON">
               JSON
@@ -419,6 +433,19 @@ loadRules();
   font-size: 13px;
   color: #4ec9b0;
   margin-bottom: 14px;
+}
+.section-label {
+  font-size: 11px;
+  color: #4ec9b0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #3e3e42;
+  padding-bottom: 4px;
+  margin-bottom: 10px;
+  margin-top: 14px;
+}
+.section-label:first-of-type {
+  margin-top: 0;
 }
 .field {
   margin-bottom: 10px;
