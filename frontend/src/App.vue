@@ -97,8 +97,12 @@ onMounted(async () => {
         </button>
       </div>
       <div class="toolbar-status">
-        <span v-if="recordingStatus.recordingId" class="status-recording">⏺ Recording</span>
-        <span v-if="recordingStatus.activeId" class="status-playback">▶ Playback</span>
+        <span v-if="recordingStatus.recordingId" class="status-recording"
+          >⏺ Recording</span
+        >
+        <span v-if="recordingStatus.activeId" class="status-playback"
+          >▶ Playback</span
+        >
       </div>
       <div class="toolbar-actions" v-if="tab === 'requests'">
         <button @click="handleClear">Clear</button>
@@ -254,8 +258,13 @@ header small {
   font-size: 11px;
 }
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .main {

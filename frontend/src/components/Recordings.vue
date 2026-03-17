@@ -142,14 +142,21 @@ onMounted(async () => {
       <div v-for="rec in recordings" :key="rec.id" class="recording-group">
         <div
           class="recording-item"
-          :class="{ active: rec.active, recording: recordingStatus.recordingId === rec.id }"
+          :class="{
+            active: rec.active,
+            recording: recordingStatus.recordingId === rec.id,
+          }"
           @click="toggleExpand(rec.id)"
         >
-          <span class="expand-icon">{{ expandedId === rec.id ? "▾" : "▸" }}</span>
+          <span class="expand-icon">{{
+            expandedId === rec.id ? "▾" : "▸"
+          }}</span>
           <span class="rec-name">{{ rec.name }}</span>
           <span class="rec-meta">{{ rec.rulesCount }} rules</span>
           <span v-if="rec.active" class="active-badge">▶ Active</span>
-          <span v-if="recordingStatus.recordingId === rec.id" class="rec-badge">⏺</span>
+          <span v-if="recordingStatus.recordingId === rec.id" class="rec-badge"
+            >⏺</span
+          >
           <div class="rec-actions" @click.stop>
             <button
               class="activate-btn"
@@ -159,7 +166,11 @@ onMounted(async () => {
             >
               {{ rec.active ? "⏸" : "▶" }}
             </button>
-            <button class="del-btn" @click="handleDelete(rec.id)" title="Delete recording">
+            <button
+              class="del-btn"
+              @click="handleDelete(rec.id)"
+              title="Delete recording"
+            >
               ✕
             </button>
           </div>
@@ -173,7 +184,10 @@ onMounted(async () => {
             v-for="rule in expandedRules"
             :key="rule.id"
             class="rule-row"
-            :class="{ disabled: !rule.enabled, editing: editingRule?.id === rule.id }"
+            :class="{
+              disabled: !rule.enabled,
+              editing: editingRule?.id === rule.id,
+            }"
             @click="editRule(rule)"
           >
             <span
@@ -187,7 +201,13 @@ onMounted(async () => {
             <span class="rule-method">{{ rule.method }}</span>
             <span class="rule-name">{{ rule.name }}</span>
             <span class="rule-status">{{ rule.statusCode }}</span>
-            <button class="rule-del" @click.stop="handleDeleteRule(rule.id)" title="Delete rule">✕</button>
+            <button
+              class="rule-del"
+              @click.stop="handleDeleteRule(rule.id)"
+              title="Delete rule"
+            >
+              ✕
+            </button>
           </div>
         </div>
       </div>
@@ -277,8 +297,13 @@ onMounted(async () => {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .stop-btn {
