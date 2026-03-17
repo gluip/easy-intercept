@@ -17,13 +17,6 @@ public class ProxyConnection
         "TE", "Trailers", "Transfer-Encoding", "Upgrade", "Proxy-Connection",
     };
 
-    // These belong on HttpContent.Headers, not HttpRequestMessage.Headers
-    private static readonly HashSet<string> ContentOnlyHeaders = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Content-Type", "Content-Encoding", "Content-Language", "Content-Location",
-        "Content-MD5", "Content-Range", "Expires", "Last-Modified",
-    };
-
     private readonly TcpClient _client;
     private readonly SessionStore _sessions;
     private readonly PinStore _pins;
@@ -46,143 +39,165 @@ public class ProxyConnection
 
     public async Task HandleAsync()
     {
-        using var tcpClient = _client;
-        var stream = tcpClient.GetStream();
+        using var tcp = _client;
+        tcp.NoDelay = true;
+        var stream = tcp.GetStream();
 
-        // StreamReader with Latin1 (byte-transparent) and leaveOpen:true
-        // Reads headers in 8 KB chunks instead of 1 byte at a time
-        using var reader = new StreamReader(stream, Encoding.Latin1,
-            detectEncodingFromByteOrderMarks: false, bufferSize: 8192, leaveOpen: true);
+        // Read raw bytes until \r\n\r\n
+        var buf = new byte[8192];
+        var filled = 0;
+        var headerEnd = -1;
 
-        // --- Parse request line ---
-        var firstLine = await reader.ReadLineAsync() ?? "";
-        if (string.IsNullOrWhiteSpace(firstLine)) return;
-
-        var parts = firstLine.Split(' ');
-        if (parts.Length < 2) return;
-
-        var method = parts[0].ToUpperInvariant();
-        var url    = parts[1];
-
-        // HTTPS CONNECT tunneling — not supported in Phase 1
-        if (method == "CONNECT")
+        while (filled < buf.Length)
         {
-            const string msg = "HTTP/1.1 405 HTTPS Not Supported\r\n" +
-                               "Content-Length: 0\r\nConnection: close\r\n\r\n";
-            await stream.WriteAsync(Encoding.ASCII.GetBytes(msg));
+            var n = await stream.ReadAsync(buf.AsMemory(filled, buf.Length - filled));
+            if (n == 0) return;
+            filled += n;
+
+            for (var i = Math.Max(0, filled - n - 3); i <= filled - 4; i++)
+            {
+                if (buf[i] == '\r' && buf[i + 1] == '\n' && buf[i + 2] == '\r' && buf[i + 3] == '\n')
+                {
+                    headerEnd = i;
+                    break;
+                }
+            }
+            if (headerEnd >= 0) break;
+        }
+
+        if (headerEnd < 0) return;
+
+        var headerText = Encoding.ASCII.GetString(buf, 0, headerEnd);
+        var lines = headerText.Split("\r\n");
+        if (lines.Length == 0) return;
+
+        var reqLine = lines[0].Split(' ');
+        if (reqLine.Length < 2) return;
+
+        var method = reqLine[0];
+        var url = reqLine[1];
+
+        if (method.Equals("CONNECT", StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteRaw(stream, "HTTP/1.1 405 HTTPS Not Supported\r\nConnection: close\r\n\r\n");
             return;
         }
 
-        // --- Parse request headers ---
-        var requestHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        while (true)
+        var reqHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 1; i < lines.Length; i++)
         {
-            var line = await reader.ReadLineAsync() ?? "";
-            if (string.IsNullOrEmpty(line)) break;
-            var colon = line.IndexOf(':');
+            var colon = lines[i].IndexOf(':');
             if (colon > 0)
-                requestHeaders[line[..colon].Trim()] = line[(colon + 1)..].Trim();
+                reqHeaders[lines[i][..colon].Trim()] = lines[i][(colon + 1)..].Trim();
         }
 
-        // --- Read request body (if any) ---
-        // After headers, the StreamReader may have buffered body bytes — drain via reader
-        var requestBodyBytes = Array.Empty<byte>();
-        if (requestHeaders.TryGetValue("Content-Length", out var clStr)
-            && int.TryParse(clStr, out var bodyLen) && bodyLen > 0)
+        // Read request body
+        var bodyStart = headerEnd + 4;
+        var leftover = filled - bodyStart;
+        byte[] reqBody = [];
+
+        if (reqHeaders.TryGetValue("Content-Length", out var cl) && int.TryParse(cl, out var bodyLen) && bodyLen > 0)
         {
-            var chars = new char[bodyLen];
-            await reader.ReadBlockAsync(chars, 0, bodyLen);
-            requestBodyBytes = Encoding.Latin1.GetBytes(chars);
+            reqBody = new byte[bodyLen];
+            var copied = Math.Min(leftover, bodyLen);
+            Buffer.BlockCopy(buf, bodyStart, reqBody, 0, copied);
+            var remaining = bodyLen - copied;
+            var offset = copied;
+            while (remaining > 0)
+            {
+                var n = await stream.ReadAsync(reqBody.AsMemory(offset, remaining));
+                if (n == 0) break;
+                offset += n;
+                remaining -= n;
+            }
         }
 
-        var requestBodyText = requestBodyBytes.Length > 0
-            ? Encoding.UTF8.GetString(requestBodyBytes)
-            : "";
-
-        // --- Check PinStore ---
+        // Check pin store
         if (_pins.TryGet(url, out var pinned))
         {
-            await WritePinnedResponseAsync(stream, pinned!);
+            var pb = Encoding.UTF8.GetBytes(pinned!.Body);
+            await WriteRaw(stream, $"HTTP/1.1 {pinned.StatusCode} OK\r\nContent-Length: {pb.Length}\r\nX-EasyIntercept-Pinned: true\r\nConnection: close\r\n\r\n");
+            await stream.WriteAsync(pb);
             return;
         }
 
-        // --- Build upstream request ---
-        var httpClient      = _httpClientFactory.CreateClient("proxy");
-        var upstreamRequest = new HttpRequestMessage(new HttpMethod(method), url);
+        // Build upstream request
+        var httpClient = _httpClientFactory.CreateClient("proxy");
+        var req = new HttpRequestMessage(new HttpMethod(method), url);
 
-        foreach (var (key, value) in requestHeaders)
+        foreach (var (key, val) in reqHeaders)
         {
             if (HopByHopHeaders.Contains(key)) continue;
-            if (key.Equals("Host",             StringComparison.OrdinalIgnoreCase)) continue;
-            if (key.Equals("Accept-Encoding",  StringComparison.OrdinalIgnoreCase)) continue;
-            if (ContentOnlyHeaders.Contains(key)) continue;
-            upstreamRequest.Headers.TryAddWithoutValidation(key, value);
+            if (key.Equals("Host", StringComparison.OrdinalIgnoreCase)) continue;
+            if (key.Equals("Accept-Encoding", StringComparison.OrdinalIgnoreCase)) continue;
+            if (key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)) continue;
+            req.Headers.TryAddWithoutValidation(key, val);
         }
 
-        if (requestBodyBytes.Length > 0)
+        if (reqBody.Length > 0)
         {
-            upstreamRequest.Content = new ByteArrayContent(requestBodyBytes);
-            if (requestHeaders.TryGetValue("Content-Type", out var ct))
-                upstreamRequest.Content.Headers.TryAddWithoutValidation("Content-Type", ct);
+            req.Content = new ByteArrayContent(reqBody);
+            if (reqHeaders.TryGetValue("Content-Type", out var ct))
+                req.Content.Headers.TryAddWithoutValidation("Content-Type", ct);
         }
 
-        // --- Send upstream (ResponseHeadersRead = don't buffer body before returning) ---
+        // Send upstream — simple: send, get full response, write back
         var sw = Stopwatch.StartNew();
-        HttpResponseMessage upstreamResponse;
+        HttpResponseMessage upstream;
         try
         {
-            upstreamResponse = await httpClient.SendAsync(
-                upstreamRequest, HttpCompletionOption.ResponseHeadersRead);
+            upstream = await httpClient.SendAsync(req);
         }
         catch (Exception ex)
         {
             sw.Stop();
-            await WriteErrorAsync(stream, 502, "Bad Gateway", ex.Message);
+            var errBody = Encoding.UTF8.GetBytes(ex.Message);
+            await WriteRaw(stream, $"HTTP/1.1 502 Bad Gateway\r\nContent-Length: {errBody.Length}\r\nConnection: close\r\n\r\n");
+            await stream.WriteAsync(errBody);
             return;
         }
 
-        // --- Stream response body to client while collecting for logging ---
-        using (upstreamResponse)
+        using (upstream)
         {
-            var responseHeaders = CollectHeaders(upstreamResponse);
-
-            // Write status + headers immediately — client starts receiving data right away
-            await WriteResponseHeadersAsync(
-                stream,
-                (int)upstreamResponse.StatusCode,
-                upstreamResponse.ReasonPhrase ?? "OK",
-                responseHeaders);
-
-            // Stream body with chunked encoding: client receives data as it arrives
-            var bodyBuffer = new MemoryStream();
-            await using var upstreamBody = await upstreamResponse.Content.ReadAsStreamAsync();
-            var pipe = new byte[16 * 1024];
-            int read;
-            while ((read = await upstreamBody.ReadAsync(pipe)) > 0)
-            {
-                // Chunked format: hex-length\r\n + data + \r\n
-                await stream.WriteAsync(Encoding.ASCII.GetBytes($"{read:x}\r\n"));
-                await stream.WriteAsync(pipe.AsMemory(0, read));
-                await stream.WriteAsync(Encoding.ASCII.GetBytes("\r\n"));
-                bodyBuffer.Write(pipe, 0, read);
-            }
-            // Terminal chunk
-            await stream.WriteAsync(Encoding.ASCII.GetBytes("0\r\n\r\n"));
+            var respBody = await upstream.Content.ReadAsByteArrayAsync();
             sw.Stop();
 
-            var responseBodyBytes = bodyBuffer.ToArray();
-            var responseBodyText  = DecodeBodyText(responseBodyBytes, responseHeaders);
+            // Collect response headers
+            var respHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var h in upstream.Headers)
+                respHeaders[h.Key] = string.Join(", ", h.Value);
+            foreach (var h in upstream.Content.Headers)
+                respHeaders[h.Key] = string.Join(", ", h.Value);
+
+            // Write full response
+            var sb = new StringBuilder();
+            sb.Append($"HTTP/1.1 {(int)upstream.StatusCode} {upstream.ReasonPhrase}\r\n");
+            foreach (var (key, val) in respHeaders)
+            {
+                if (key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase)) continue;
+                if (key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)) continue;
+                sb.Append($"{key}: {val}\r\n");
+            }
+            sb.Append($"Content-Length: {respBody.Length}\r\n");
+            sb.Append("Connection: close\r\n\r\n");
+
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(sb.ToString()));
+            await stream.WriteAsync(respBody);
+
+            // Log session
+            var isText = respHeaders.TryGetValue("Content-Type", out var rct)
+                && (rct.Contains("text/") || rct.Contains("json") || rct.Contains("xml"));
 
             var session = new ProxySession
             {
-                Method          = method,
-                Url             = url,
-                RequestHeaders  = requestHeaders,
-                RequestBody     = requestBodyText,
-                ResponseStatus  = (int)upstreamResponse.StatusCode,
-                ResponseHeaders = responseHeaders,
-                ResponseBody    = responseBodyText,
-                DurationMs      = sw.ElapsedMilliseconds,
+                Method = method,
+                Url = url,
+                RequestHeaders = reqHeaders,
+                RequestBody = reqBody.Length > 0 ? Encoding.UTF8.GetString(reqBody) : "",
+                ResponseStatus = (int)upstream.StatusCode,
+                ResponseHeaders = respHeaders,
+                ResponseBody = isText ? Encoding.UTF8.GetString(respBody) : $"[{respBody.Length} bytes]",
+                DurationMs = sw.ElapsedMilliseconds,
             };
 
             _sessions.Add(session);
@@ -190,96 +205,6 @@ public class ProxyConnection
         }
     }
 
-    // ---------- helpers ----------
-
-    private static Dictionary<string, string> CollectHeaders(HttpResponseMessage response)
-    {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var h in response.Headers)
-            result[h.Key] = string.Join(", ", h.Value);
-        foreach (var h in response.Content.Headers)
-            result[h.Key] = string.Join(", ", h.Value);
-        return result;
-    }
-
-    private static string DecodeBodyText(byte[] bytes, Dictionary<string, string> headers)
-    {
-        if (!headers.TryGetValue("Content-Type", out var ct))
-            return $"[{bytes.Length} bytes]";
-
-        var isText = ct.Contains("text/",                   StringComparison.OrdinalIgnoreCase)
-                  || ct.Contains("json",                    StringComparison.OrdinalIgnoreCase)
-                  || ct.Contains("xml",                     StringComparison.OrdinalIgnoreCase)
-                  || ct.Contains("javascript",              StringComparison.OrdinalIgnoreCase)
-                  || ct.Contains("x-www-form-urlencoded",   StringComparison.OrdinalIgnoreCase);
-
-        return isText ? Encoding.UTF8.GetString(bytes) : $"[binary: {bytes.Length} bytes]";
-    }
-
-    // Writes status line + headers only (body is streamed separately)
-    private static async Task WriteResponseHeadersAsync(
-        Stream stream, int status, string reason,
-        Dictionary<string, string> headers)
-    {
-        var sb = new StringBuilder();
-        sb.Append($"HTTP/1.1 {status} {reason}\r\n");
-        foreach (var (key, value) in headers)
-        {
-            if (key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase)) continue;
-            if (key.Equals("Content-Length",    StringComparison.OrdinalIgnoreCase)) continue;
-            sb.Append($"{key}: {value}\r\n");
-        }
-        sb.Append("Transfer-Encoding: chunked\r\n");
-        sb.Append("Connection: close\r\n");
-        sb.Append("\r\n");
-
-        await stream.WriteAsync(Encoding.ASCII.GetBytes(sb.ToString()));
-    }
-
-    private static async Task WritePinnedResponseAsync(Stream stream, PinnedResponse pinned)
-    {
-        var bodyBytes = Encoding.UTF8.GetBytes(pinned.Body);
-        var sb = new StringBuilder();
-        sb.Append($"HTTP/1.1 {pinned.StatusCode} OK\r\n");
-        foreach (var (key, value) in pinned.Headers)
-        {
-            if (key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase)) continue;
-            if (key.Equals("Content-Length",    StringComparison.OrdinalIgnoreCase)) continue;
-            sb.Append($"{key}: {value}\r\n");
-        }
-        sb.Append($"Content-Length: {bodyBytes.Length}\r\n");
-        sb.Append("Connection: close\r\n");
-        sb.Append("X-EasyIntercept-Pinned: true\r\n");
-        sb.Append("\r\n");
-
-        await stream.WriteAsync(Encoding.ASCII.GetBytes(sb.ToString()));
-        await stream.WriteAsync(bodyBytes);
-    }
-
-    // Reads one line — kept only for potential future use (not called in hot path)
-    private static async Task<string> ReadLineAsync(Stream stream)
-    {
-        var sb     = new StringBuilder();
-        var buffer = new byte[1];
-        while (true)
-        {
-            var read = await stream.ReadAsync(buffer);
-            if (read == 0) break;
-            if (buffer[0] == '\n') break;
-            if (buffer[0] != '\r') sb.Append((char)buffer[0]);
-        }
-        return sb.ToString();
-    }
-
-    private static async Task WriteErrorAsync(Stream stream, int status, string reason, string message)
-    {
-        var bodyBytes = Encoding.UTF8.GetBytes($"EasyIntercept: {message}");
-        var header    = $"HTTP/1.1 {status} {reason}\r\n" +
-                        $"Content-Type: text/plain\r\n" +
-                        $"Content-Length: {bodyBytes.Length}\r\n" +
-                        "Connection: close\r\n\r\n";
-        await stream.WriteAsync(Encoding.ASCII.GetBytes(header));
-        await stream.WriteAsync(bodyBytes);
-    }
-
+    private static async Task WriteRaw(Stream stream, string text) =>
+        await stream.WriteAsync(Encoding.ASCII.GetBytes(text));
 }

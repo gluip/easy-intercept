@@ -15,6 +15,7 @@ builder.Services.AddHttpClient("proxy").ConfigurePrimaryHttpMessageHandler(() =>
         AllowAutoRedirect = false,
         UseCookies = false,
         AutomaticDecompression = System.Net.DecompressionMethods.All,
+        UseProxy = false,
     });
 
 builder.Services.AddSingleton<SessionStore>();
