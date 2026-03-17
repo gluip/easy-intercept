@@ -25,6 +25,7 @@ public class ProxyConnection
     private readonly SessionStore _sessions;
     private readonly PinStore _pins;
     private readonly AutoResponderStore _autoResponder;
+    private readonly RecordingStore _recordings;
     private readonly IHubContext<ProxyHub> _hub;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly CertificateService _certs;
@@ -34,6 +35,7 @@ public class ProxyConnection
         SessionStore sessions,
         PinStore pins,
         AutoResponderStore autoResponder,
+        RecordingStore recordings,
         IHubContext<ProxyHub> hub,
         IHttpClientFactory httpClientFactory,
         CertificateService certs)
@@ -42,6 +44,7 @@ public class ProxyConnection
         _sessions = sessions;
         _pins = pins;
         _autoResponder = autoResponder;
+        _recordings = recordings;
         _hub = hub;
         _httpClientFactory = httpClientFactory;
         _certs = certs;
@@ -191,9 +194,11 @@ public class ProxyConnection
             return;
         }
 
-        // Check auto-responder rules
+        // Check auto-responder rules (manual first, then active recording)
         var reqBodyStr = reqBody.Length > 0 ? Encoding.UTF8.GetString(reqBody) : "";
-        var rule = _autoResponder.Match(method, url, reqBodyStr);
+        var activeRecording = _recordings.GetActive();
+        var rule = _autoResponder.Match(method, url, reqBodyStr,
+            activeRecording?.Rules);
         if (rule != null)
         {
             var arBody = Encoding.UTF8.GetBytes(rule.Body);
@@ -316,6 +321,9 @@ public class ProxyConnection
 
             _sessions.Add(session);
             await _hub.Clients.All.SendAsync("NewSession", session);
+
+            // Capture into recording (skip auto-responded sessions)
+            _recordings.CaptureSession(session);
         }
     }
 

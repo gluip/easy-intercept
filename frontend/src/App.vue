@@ -5,20 +5,23 @@ import { useProxy } from "./composables/useProxy";
 import SessionList from "./components/SessionList.vue";
 import SessionDetail from "./components/SessionDetail.vue";
 import AutoResponder from "./components/AutoResponder.vue";
+import Recordings from "./components/Recordings.vue";
 
 const {
   sessions,
   connected,
+  recordingStatus,
   pendingSession,
   connect,
   loadSessions,
   clearSessions,
   replaySession,
   deleteSessions,
+  loadRecordingStatus,
 } = useProxy();
 
 const selectedIds = ref<string[]>([]);
-const tab = ref<"requests" | "autoresponder">("requests");
+const tab = ref<"requests" | "autoresponder" | "recordings">("requests");
 
 const selectedSession = computed(() =>
   selectedIds.value.length === 1
@@ -61,6 +64,7 @@ onMounted(async () => {
     console.error("SignalR connect failed:", e);
   }
   await loadSessions();
+  await loadRecordingStatus();
 });
 </script>
 
@@ -85,6 +89,16 @@ onMounted(async () => {
         >
           Auto Responder
         </button>
+        <button
+          :class="{ active: tab === 'recordings' }"
+          @click="tab = 'recordings'"
+        >
+          Recordings
+        </button>
+      </div>
+      <div class="toolbar-status">
+        <span v-if="recordingStatus.recordingId" class="status-recording">⏺ Recording</span>
+        <span v-if="recordingStatus.activeId" class="status-playback">▶ Playback</span>
       </div>
       <div class="toolbar-actions" v-if="tab === 'requests'">
         <button @click="handleClear">Clear</button>
@@ -117,8 +131,12 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="main" v-else>
+    <div class="main" v-else-if="tab === 'autoresponder'">
       <AutoResponder />
+    </div>
+
+    <div class="main" v-else>
+      <Recordings />
     </div>
 
     <div class="status-bar">
@@ -219,6 +237,25 @@ header small {
 .toolbar-actions {
   display: flex;
   gap: 8px;
+}
+.toolbar-status {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-left: auto;
+}
+.status-recording {
+  color: #f48771;
+  font-size: 11px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.status-playback {
+  color: #4ec9b0;
+  font-size: 11px;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 .main {

@@ -1,6 +1,7 @@
 using EasyIntercept.AutoResponder;
 using EasyIntercept.Certificates;
 using EasyIntercept.Hubs;
+using EasyIntercept.Models;
 using EasyIntercept.Pins;
 using EasyIntercept.Proxy;
 using EasyIntercept.Storage;
@@ -32,6 +33,7 @@ builder.Services.AddHttpClient("replay").ConfigurePrimaryHttpMessageHandler(() =
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<PinStore>();
 builder.Services.AddSingleton<AutoResponderStore>();
+builder.Services.AddSingleton<RecordingStore>();
 builder.Services.AddSingleton<CertificateService>();
 builder.Services.AddHostedService<ProxyServer>();
 
@@ -133,5 +135,67 @@ app.MapGet("/ca", (CertificateService certs) =>
     if (!File.Exists(path)) return Results.NotFound();
     return Results.Bytes(File.ReadAllBytes(path), "application/x-x509-ca-cert", "easyntercept-ca.crt");
 });
+
+// Recording CRUD
+app.MapGet("/api/recordings", (RecordingStore store) =>
+    Results.Ok(store.GetAll().Select(r => new
+    {
+        r.Id, r.Name, r.CreatedAt, r.Active,
+        RulesCount = r.Rules.Count,
+    })));
+
+app.MapPost("/api/recordings", (Recording input, RecordingStore store) =>
+    Results.Ok(store.Create(input.Name)));
+
+app.MapDelete("/api/recordings/{id:guid}", (Guid id, RecordingStore store) =>
+    store.Delete(id) ? Results.Ok() : Results.NotFound());
+
+app.MapPut("/api/recordings/{id:guid}", (Guid id, Recording input, RecordingStore store) =>
+{
+    var rec = store.Rename(id, input.Name);
+    return rec != null ? Results.Ok(rec) : Results.NotFound();
+});
+
+app.MapPost("/api/recordings/{id:guid}/activate", (Guid id, RecordingStore store) =>
+    store.Activate(id) ? Results.Ok() : Results.NotFound());
+
+app.MapPost("/api/recordings/{id:guid}/deactivate", (Guid id, RecordingStore store) =>
+    store.Deactivate(id) ? Results.Ok() : Results.NotFound());
+
+app.MapPost("/api/recordings/start", (Recording input, RecordingStore store) =>
+{
+    var rec = store.StartRecording(input.Name);
+    return Results.Ok(rec);
+});
+
+app.MapPost("/api/recordings/stop", (RecordingStore store) =>
+{
+    store.StopRecording();
+    return Results.Ok();
+});
+
+app.MapGet("/api/recordings/status", (RecordingStore store) =>
+    Results.Ok(new { RecordingId = store.RecordingId, ActiveId = store.ActiveId }));
+
+app.MapGet("/api/recordings/{id:guid}/rules", (Guid id, RecordingStore store) =>
+{
+    var rec = store.Get(id);
+    return rec != null ? Results.Ok(rec.Rules) : Results.NotFound();
+});
+
+app.MapPut("/api/recordings/{id:guid}/rules/{ruleId:guid}",
+    (Guid id, Guid ruleId, AutoResponderRule rule, RecordingStore store) =>
+{
+    rule.Id = ruleId;
+    return store.UpdateRule(id, rule) ? Results.Ok(rule) : Results.NotFound();
+});
+
+app.MapPost("/api/recordings/{id:guid}/rules/{ruleId:guid}/toggle",
+    (Guid id, Guid ruleId, RecordingStore store) =>
+    store.ToggleRule(id, ruleId) ? Results.Ok() : Results.NotFound());
+
+app.MapDelete("/api/recordings/{id:guid}/rules/{ruleId:guid}",
+    (Guid id, Guid ruleId, RecordingStore store) =>
+    store.DeleteRule(id, ruleId) ? Results.Ok() : Results.NotFound());
 
 await app.RunAsync();

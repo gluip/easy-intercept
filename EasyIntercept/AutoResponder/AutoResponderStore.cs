@@ -16,9 +16,24 @@ public class AutoResponderStore
 
     public IEnumerable<AutoResponderRule> GetAll() => _rules.Values.ToArray();
 
-    public AutoResponderRule? Match(string method, string url, string requestBody)
+    public AutoResponderRule? Match(string method, string url, string requestBody,
+        IEnumerable<AutoResponderRule>? extraRules = null)
     {
-        foreach (var rule in _rules.Values)
+        // Manual rules first (highest priority)
+        var match = MatchRules(_rules.Values, method, url, requestBody);
+        if (match != null) return match;
+
+        // Then extra rules (e.g. active recording)
+        if (extraRules != null)
+            return MatchRules(extraRules, method, url, requestBody);
+
+        return null;
+    }
+
+    private static AutoResponderRule? MatchRules(IEnumerable<AutoResponderRule> rules,
+        string method, string url, string requestBody)
+    {
+        foreach (var rule in rules)
         {
             if (!rule.Enabled) continue;
             if (rule.Method != "*" && !rule.Method.Equals(method, StringComparison.OrdinalIgnoreCase)) continue;

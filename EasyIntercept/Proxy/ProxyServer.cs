@@ -15,6 +15,7 @@ public class ProxyServer : BackgroundService
     private readonly SessionStore _sessions;
     private readonly PinStore _pins;
     private readonly AutoResponderStore _autoResponder;
+    private readonly RecordingStore _recordings;
     private readonly IHubContext<ProxyHub> _hub;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly CertificateService _certs;
@@ -24,6 +25,7 @@ public class ProxyServer : BackgroundService
         SessionStore sessions,
         PinStore pins,
         AutoResponderStore autoResponder,
+        RecordingStore recordings,
         IHubContext<ProxyHub> hub,
         IHttpClientFactory httpClientFactory,
         CertificateService certs)
@@ -32,6 +34,7 @@ public class ProxyServer : BackgroundService
         _sessions = sessions;
         _pins = pins;
         _autoResponder = autoResponder;
+        _recordings = recordings;
         _hub = hub;
         _httpClientFactory = httpClientFactory;
         _certs = certs;
@@ -64,7 +67,7 @@ public class ProxyServer : BackgroundService
 
             _ = Task.Run(async () =>
             {
-                var conn = new ProxyConnection(client, _sessions, _pins, _autoResponder, _hub, _httpClientFactory, _certs);
+                var conn = new ProxyConnection(client, _sessions, _pins, _autoResponder, _recordings, _hub, _httpClientFactory, _certs);
                 try
                 {
                     await conn.HandleAsync();

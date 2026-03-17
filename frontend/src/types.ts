@@ -24,3 +24,16 @@ export interface AutoResponderRule {
   headers: Record<string, string>;
   body: string;
 }
+
+export interface Recording {
+  id: string;
+  name: string;
+  createdAt: string;
+  active: boolean;
+  rulesCount: number;
+}
+
+export interface RecordingStatus {
+  recordingId: string | null;
+  activeId: string | null;
+}
