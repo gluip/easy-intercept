@@ -4,36 +4,32 @@ import type { ProxySession } from "./types";
 import { useProxy } from "./composables/useProxy";
 import SessionList from "./components/SessionList.vue";
 import SessionDetail from "./components/SessionDetail.vue";
+import AutoResponder from "./components/AutoResponder.vue";
 
 const {
   sessions,
   connected,
+  pendingSession,
   connect,
   loadSessions,
-  loadPins,
-  pinSession,
-  unpinUrl,
   clearSessions,
-  isPinned,
 } = useProxy();
 
 const selected = ref<ProxySession | null>(null);
+const tab = ref<"requests" | "autoresponder">("requests");
 
 function selectSession(s: ProxySession) {
   selected.value = s;
 }
 
-async function handlePin(id: string) {
-  await pinSession(id);
-}
-
-async function handleUnpin(url: string) {
-  await unpinUrl(url);
-}
-
 function handleClear() {
   clearSessions();
   selected.value = null;
+}
+
+function handleAddAutoResponse(session: ProxySession) {
+  pendingSession.value = session;
+  tab.value = "autoresponder";
 }
 
 onMounted(async () => {
@@ -43,7 +39,6 @@ onMounted(async () => {
     console.error("SignalR connect failed:", e);
   }
   await loadSessions();
-  await loadPins();
 });
 </script>
 
@@ -55,11 +50,27 @@ onMounted(async () => {
     </header>
 
     <div class="toolbar">
-      <button @click="handleClear">Clear</button>
-      <button @click="loadSessions">Reload</button>
+      <div class="tabs">
+        <button
+          :class="{ active: tab === 'requests' }"
+          @click="tab = 'requests'"
+        >
+          Requests
+        </button>
+        <button
+          :class="{ active: tab === 'autoresponder' }"
+          @click="tab = 'autoresponder'"
+        >
+          Auto Responder
+        </button>
+      </div>
+      <div class="toolbar-actions" v-if="tab === 'requests'">
+        <button @click="handleClear">Clear</button>
+        <button @click="loadSessions">Reload</button>
+      </div>
     </div>
 
-    <div class="main">
+    <div class="main" v-if="tab === 'requests'">
       <SessionList
         :sessions="sessions"
         :selected-id="selected?.id ?? null"
@@ -69,11 +80,13 @@ onMounted(async () => {
       <SessionDetail
         v-if="selected"
         :session="selected"
-        :pinned="isPinned(selected.url)"
-        @pin="handlePin"
-        @unpin="handleUnpin"
+        @add-auto-response="handleAddAutoResponse"
       />
       <div v-else class="detail-placeholder">Select a request to inspect</div>
+    </div>
+
+    <div class="main" v-else>
+      <AutoResponder />
     </div>
 
     <div class="status-bar">
@@ -146,8 +159,34 @@ header small {
   border-bottom: 1px solid #3e3e42;
   padding: 6px 16px;
   display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+.tabs {
+  display: flex;
+  gap: 0;
+}
+.tabs button {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #858585;
+  padding: 4px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tabs button:hover {
+  color: #d4d4d4;
+}
+.tabs button.active {
+  color: #d4d4d4;
+  border-bottom-color: #007acc;
+}
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .main {

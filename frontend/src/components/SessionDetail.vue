@@ -3,12 +3,10 @@ import type { ProxySession } from "../types";
 
 const props = defineProps<{
   session: ProxySession;
-  pinned: boolean;
 }>();
 
 const emit = defineEmits<{
-  pin: [id: string];
-  unpin: [url: string];
+  addAutoResponse: [session: ProxySession];
 }>();
 
 function formatJson(obj: unknown): string {
@@ -39,15 +37,8 @@ function isJson(s: string): boolean {
     </div>
 
     <div class="actions">
-      <button
-        v-if="pinned"
-        class="unpin-btn"
-        @click="emit('unpin', session.url)"
-      >
-        📌 Unpin response
-      </button>
-      <button v-else class="pin-btn" @click="emit('pin', session.id)">
-        📌 Pin response
+      <button class="ar-btn" @click="emit('addAutoResponse', session)">
+        ⚡ Add to Auto Responder
       </button>
     </div>
 
@@ -118,23 +109,13 @@ pre {
   margin: 10px 0;
 }
 
-.pin-btn {
-  background: #1e3a5f;
-  color: #4ec9b0;
-  border-color: #4ec9b0;
+.ar-btn {
+  background: #1e3a2f;
+  color: #dcdcaa;
+  border-color: #dcdcaa;
 }
-.pin-btn:hover {
-  background: #4ec9b0;
+.ar-btn:hover {
+  background: #dcdcaa;
   color: #1e1e1e;
-}
-
-.unpin-btn {
-  background: #3e1e1e;
-  color: #f44747;
-  border-color: #f44747;
-}
-.unpin-btn:hover {
-  background: #f44747;
-  color: white;
 }
 </style>

@@ -1,9 +1,10 @@
 import { ref, readonly } from "vue";
 import { HubConnectionBuilder, HubConnectionState } from "@microsoft/signalr";
-import type { ProxySession } from "./types";
+import type { ProxySession, AutoResponderRule } from "../types";
 
 const sessions = ref<ProxySession[]>([]);
-const pinnedUrls = ref<Set<string>>(new Set());
+const rules = ref<AutoResponderRule[]>([]);
+const pendingSession = ref<ProxySession | null>(null);
 const connected = ref(false);
 
 const connection = new HubConnectionBuilder()
@@ -30,41 +31,53 @@ async function loadSessions() {
   sessions.value = await r.json();
 }
 
-async function loadPins() {
-  const r = await fetch("/api/pins");
-  const data: Record<string, unknown> = await r.json();
-  pinnedUrls.value = new Set(Object.keys(data));
-}
-
-async function pinSession(id: string) {
-  await fetch(`/api/sessions/${id}/pin`, { method: "POST" });
-  await loadPins();
-}
-
-async function unpinUrl(url: string) {
-  await fetch(`/api/pins?url=${encodeURIComponent(url)}`, { method: "DELETE" });
-  await loadPins();
-}
-
 function clearSessions() {
   sessions.value = [];
 }
 
-function isPinned(url: string) {
-  return pinnedUrls.value.has(url);
+async function loadRules() {
+  const r = await fetch("/api/auto-responder");
+  rules.value = await r.json();
+}
+
+async function createRule(rule: Partial<AutoResponderRule>): Promise<AutoResponderRule> {
+  const r = await fetch("/api/auto-responder", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rule),
+  });
+  const created = await r.json();
+  rules.value.push(created);
+  return created;
+}
+
+async function updateRule(rule: AutoResponderRule) {
+  await fetch(`/api/auto-responder/${rule.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rule),
+  });
+  const idx = rules.value.findIndex((r) => r.id === rule.id);
+  if (idx >= 0) rules.value[idx] = rule;
+}
+
+async function deleteRule(id: string) {
+  await fetch(`/api/auto-responder/${id}`, { method: "DELETE" });
+  rules.value = rules.value.filter((r) => r.id !== id);
 }
 
 export function useProxy() {
   return {
     sessions: readonly(sessions),
-    pinnedUrls: readonly(pinnedUrls),
+    rules,
+    pendingSession,
     connected: readonly(connected),
     connect,
     loadSessions,
-    loadPins,
-    pinSession,
-    unpinUrl,
     clearSessions,
-    isPinned,
+    loadRules,
+    createRule,
+    updateRule,
+    deleteRule,
   };
 }

@@ -20,6 +20,10 @@ function statusClass(s: number) {
   if (s >= 300) return "s3";
   return "s2";
 }
+
+function isAutoResponse(s: ProxySession) {
+  return s.responseHeaders?.["X-EasyIntercept-AutoResponder"] === "true";
+}
 </script>
 
 <template>
@@ -46,7 +50,10 @@ function statusClass(s: number) {
           <td class="col-status" :class="statusClass(s.responseStatus)">
             {{ s.responseStatus }}
           </td>
-          <td class="col-url" :title="s.url">{{ s.url }}</td>
+          <td class="col-url" :title="s.url">
+            <span v-if="isAutoResponse(s)" class="ar-badge" title="Auto Responder">⚡</span>
+            {{ s.url }}
+          </td>
           <td class="col-dur">{{ s.durationMs }}</td>
         </tr>
       </tbody>
@@ -152,5 +159,10 @@ td {
   text-align: center;
   font-size: 13px;
   line-height: 2;
+}
+
+.ar-badge {
+  margin-right: 4px;
+  font-size: 11px;
 }
 </style>

@@ -1,3 +1,4 @@
+using EasyIntercept.AutoResponder;
 using EasyIntercept.Certificates;
 using EasyIntercept.Hubs;
 using EasyIntercept.Pins;
@@ -21,6 +22,7 @@ builder.Services.AddHttpClient("proxy").ConfigurePrimaryHttpMessageHandler(() =>
 
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<PinStore>();
+builder.Services.AddSingleton<AutoResponderStore>();
 builder.Services.AddSingleton<CertificateService>();
 builder.Services.AddHostedService<ProxyServer>();
 
@@ -57,6 +59,31 @@ app.MapDelete("/api/pins", (string url, PinStore pins) =>
 
 app.MapGet("/api/pins", (PinStore pins) =>
     Results.Ok(pins.GetAll()));
+
+// Auto-responder CRUD
+app.MapGet("/api/auto-responder", (AutoResponderStore store) =>
+    Results.Ok(store.GetAll()));
+
+app.MapPost("/api/auto-responder", (AutoResponderRule rule, AutoResponderStore store) =>
+{
+    rule.Id = Guid.NewGuid();
+    store.AddOrUpdate(rule);
+    return Results.Ok(rule);
+});
+
+app.MapPut("/api/auto-responder/{id:guid}", (Guid id, AutoResponderRule rule, AutoResponderStore store) =>
+{
+    if (store.Get(id) is null) return Results.NotFound();
+    rule.Id = id;
+    store.AddOrUpdate(rule);
+    return Results.Ok(rule);
+});
+
+app.MapDelete("/api/auto-responder/{id:guid}", (Guid id, AutoResponderStore store) =>
+{
+    store.Remove(id);
+    return Results.Ok();
+});
 
 app.MapGet("/ca", (CertificateService certs) =>
 {

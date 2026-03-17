@@ -11,8 +11,14 @@ export interface ProxySession {
   durationMs: number;
 }
 
-export interface PinnedResponse {
+export interface AutoResponderRule {
+  id: string;
+  name: string;
+  method: string;
+  urlPattern: string;
+  enabled: boolean;
   statusCode: number;
+  contentType: string;
   headers: Record<string, string>;
   body: string;
 }
