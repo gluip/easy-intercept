@@ -37,7 +37,11 @@ function handleClear() {
 }
 
 onMounted(async () => {
-  await connect();
+  try {
+    await connect();
+  } catch (e) {
+    console.error("SignalR connect failed:", e);
+  }
   await loadSessions();
   await loadPins();
 });
