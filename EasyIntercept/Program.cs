@@ -25,6 +25,8 @@ builder.Services.AddHttpClient("replay").ConfigurePrimaryHttpMessageHandler(() =
     {
         AllowAutoRedirect = false,
         UseCookies = false,
+        Proxy = new System.Net.WebProxy("http://localhost:8888"),
+        UseProxy = true,
     });
 
 builder.Services.AddSingleton<SessionStore>();
@@ -42,6 +44,18 @@ app.MapHub<ProxyHub>("/proxy-hub");
 
 app.MapGet("/api/sessions", (SessionStore store) =>
     Results.Ok(store.GetAll()));
+
+app.MapDelete("/api/sessions", (SessionStore store) =>
+{
+    store.Clear();
+    return Results.Ok();
+});
+
+app.MapPost("/api/sessions/delete", (Guid[] ids, SessionStore store) =>
+{
+    store.RemoveMany(ids);
+    return Results.Ok();
+});
 
 app.MapPost("/api/sessions/{id:guid}/replay", async (Guid id, SessionStore store, IHttpClientFactory httpFactory) =>
 {

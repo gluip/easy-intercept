@@ -1,32 +1,79 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import type { ProxySession } from "../types";
 import ContextMenu from "./ContextMenu.vue";
 
-defineProps<{
+const props = defineProps<{
   sessions: readonly ProxySession[];
-  selectedId: string | null;
+  selectedIds: string[];
 }>();
 
 const emit = defineEmits<{
-  select: [session: ProxySession];
+  select: [ids: string[]];
   copyUrl: [session: ProxySession];
   replay: [session: ProxySession];
   addAutoResponse: [session: ProxySession];
+  deleteSelected: [ids: string[]];
 }>();
+
+const listEl = ref<HTMLElement>();
+const lastClickedId = ref<string | null>(null);
 
 const ctxMenu = ref<{ session: ProxySession; x: number; y: number } | null>(
   null,
 );
 
+const selectedSet = computed(() => new Set(props.selectedIds));
+
 const menuItems = [
   { label: "Copy URL", icon: "📋", action: "copy-url" },
   { label: "Replay", icon: "🔁", action: "replay" },
   { label: "Add to Auto Responder", icon: "⚡", action: "add-auto-response" },
+  { label: "Delete", icon: "🗑️", action: "delete" },
 ];
+
+function handleClick(e: MouseEvent, session: ProxySession) {
+  const meta = e.metaKey || e.ctrlKey;
+  const shift = e.shiftKey;
+
+  if (shift && lastClickedId.value) {
+    // range select
+    const ids = props.sessions.map((s) => s.id);
+    const from = ids.indexOf(lastClickedId.value);
+    const to = ids.indexOf(session.id);
+    if (from >= 0 && to >= 0) {
+      const [lo, hi] = from < to ? [from, to] : [to, from];
+      const range = ids.slice(lo, hi + 1);
+      if (meta) {
+        const merged = new Set([...props.selectedIds, ...range]);
+        emit("select", [...merged]);
+      } else {
+        emit("select", range);
+      }
+    }
+  } else if (meta) {
+    // toggle single
+    if (selectedSet.value.has(session.id)) {
+      emit(
+        "select",
+        props.selectedIds.filter((id) => id !== session.id),
+      );
+    } else {
+      emit("select", [...props.selectedIds, session.id]);
+    }
+  } else {
+    emit("select", [session.id]);
+  }
+  lastClickedId.value = session.id;
+}
 
 function onContextMenu(e: MouseEvent, session: ProxySession) {
   e.preventDefault();
+  // if right-clicked session not in selection, select it
+  if (!selectedSet.value.has(session.id)) {
+    emit("select", [session.id]);
+    lastClickedId.value = session.id;
+  }
   ctxMenu.value = { session, x: e.clientX, y: e.clientY };
 }
 
@@ -37,7 +84,64 @@ function onMenuSelect(action: string) {
   if (action === "copy-url") emit("copyUrl", session);
   else if (action === "replay") emit("replay", session);
   else if (action === "add-auto-response") emit("addAutoResponse", session);
+  else if (action === "delete") emit("deleteSelected", [...props.selectedIds]);
 }
+
+function onKeyDown(e: KeyboardEvent) {
+  // only handle when our list is focused
+  if (
+    !listEl.value?.contains(document.activeElement) &&
+    document.activeElement !== listEl.value
+  )
+    return;
+
+  if (
+    (e.key === "Delete" || e.key === "Backspace") &&
+    props.selectedIds.length > 0
+  ) {
+    e.preventDefault();
+    emit("deleteSelected", [...props.selectedIds]);
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key === "a") {
+    e.preventDefault();
+    emit(
+      "select",
+      props.sessions.map((s) => s.id),
+    );
+  }
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    const ids = props.sessions.map((s) => s.id);
+    if (ids.length === 0) return;
+    const lastSelected =
+      props.selectedIds.length > 0
+        ? props.selectedIds[props.selectedIds.length - 1]
+        : null;
+    const curIdx = lastSelected ? ids.indexOf(lastSelected) : -1;
+    const nextIdx =
+      e.key === "ArrowDown"
+        ? Math.min(curIdx + 1, ids.length - 1)
+        : Math.max(curIdx - 1, 0);
+    const nextId = ids[nextIdx];
+    if (e.shiftKey) {
+      if (!props.selectedIds.includes(nextId)) {
+        emit("select", [...props.selectedIds, nextId]);
+      } else {
+        // shrink selection when going back
+        emit("select", props.selectedIds.filter((id) => id !== lastSelected));
+      }
+    } else {
+      emit("select", [nextId]);
+    }
+    lastClickedId.value = nextId;
+    // scroll the row into view
+    const row = listEl.value?.querySelector(`tr[data-id="${nextId}"]`);
+    row?.scrollIntoView({ block: "nearest" });
+  }
+}
+
+onMounted(() => document.addEventListener("keydown", onKeyDown));
+onUnmounted(() => document.removeEventListener("keydown", onKeyDown));
 
 function methodClass(m: string) {
   return ["GET", "POST", "PUT", "DELETE", "PATCH"].includes(m) ? m : "";
@@ -56,7 +160,7 @@ function isAutoResponse(s: ProxySession) {
 </script>
 
 <template>
-  <div class="session-list">
+  <div ref="listEl" class="session-list" tabindex="0">
     <table>
       <thead>
         <tr>
@@ -70,8 +174,9 @@ function isAutoResponse(s: ProxySession) {
         <tr
           v-for="s in sessions"
           :key="s.id"
-          :class="{ selected: s.id === selectedId }"
-          @click="emit('select', s)"
+          :data-id="s.id"
+          :class="{ selected: selectedSet.has(s.id) }"
+          @click="handleClick($event, s)"
           @contextmenu="onContextMenu($event, s)"
         >
           <td class="col-method" :class="methodClass(s.method)">
@@ -114,6 +219,7 @@ function isAutoResponse(s: ProxySession) {
   width: 50%;
   overflow-y: auto;
   border-right: 1px solid #3e3e42;
+  outline: none;
 }
 
 table {

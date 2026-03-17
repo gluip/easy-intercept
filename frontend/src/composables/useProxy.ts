@@ -31,7 +31,8 @@ async function loadSessions() {
   sessions.value = await r.json();
 }
 
-function clearSessions() {
+async function clearSessions() {
+  await fetch("/api/sessions", { method: "DELETE" });
   sessions.value = [];
 }
 
@@ -73,6 +74,15 @@ async function replaySession(id: string) {
   return r.json();
 }
 
+async function deleteSessions(ids: string[]) {
+  await fetch("/api/sessions/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(ids),
+  });
+  sessions.value = sessions.value.filter((s) => !ids.includes(s.id));
+}
+
 export function useProxy() {
   return {
     sessions: readonly(sessions),
@@ -87,5 +97,6 @@ export function useProxy() {
     updateRule,
     deleteRule,
     replaySession,
+    deleteSessions,
   };
 }

@@ -21,6 +21,23 @@ public class SessionStore
     public ProxySession? Get(Guid id) =>
         _index.TryGetValue(id, out var session) ? session : null;
 
+    public void Remove(Guid id)
+    {
+        _index.TryRemove(id, out _);
+    }
+
+    public void RemoveMany(IEnumerable<Guid> ids)
+    {
+        foreach (var id in ids)
+            _index.TryRemove(id, out _);
+    }
+
+    public void Clear()
+    {
+        _index.Clear();
+        while (_queue.TryDequeue(out _)) { }
+    }
+
     public IEnumerable<ProxySession> GetAll() =>
-        _queue.ToArray().Reverse();
+        _queue.Where(s => _index.ContainsKey(s.Id)).Reverse();
 }

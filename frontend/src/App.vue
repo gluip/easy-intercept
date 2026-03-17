@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import type { ProxySession } from "./types";
 import { useProxy } from "./composables/useProxy";
 import SessionList from "./components/SessionList.vue";
@@ -14,18 +14,25 @@ const {
   loadSessions,
   clearSessions,
   replaySession,
+  deleteSessions,
 } = useProxy();
 
-const selected = ref<ProxySession | null>(null);
+const selectedIds = ref<string[]>([]);
 const tab = ref<"requests" | "autoresponder">("requests");
 
-function selectSession(s: ProxySession) {
-  selected.value = s;
+const selectedSession = computed(() =>
+  selectedIds.value.length === 1
+    ? (sessions.value.find((s) => s.id === selectedIds.value[0]) ?? null)
+    : null,
+);
+
+function selectSessions(ids: string[]) {
+  selectedIds.value = ids;
 }
 
 function handleClear() {
   clearSessions();
-  selected.value = null;
+  selectedIds.value = [];
 }
 
 function handleAddAutoResponse(session: ProxySession) {
@@ -40,6 +47,11 @@ function handleCopyUrl(session: ProxySession) {
 async function handleReplay(session: ProxySession) {
   await replaySession(session.id);
   await loadSessions();
+}
+
+async function handleDeleteSelected(ids: string[]) {
+  await deleteSessions(ids);
+  selectedIds.value = selectedIds.value.filter((id) => !ids.includes(id));
 }
 
 onMounted(async () => {
@@ -83,19 +95,26 @@ onMounted(async () => {
     <div class="main" v-if="tab === 'requests'">
       <SessionList
         :sessions="sessions"
-        :selected-id="selected?.id ?? null"
-        @select="selectSession"
+        :selected-ids="selectedIds"
+        @select="selectSessions"
         @copy-url="handleCopyUrl"
         @replay="handleReplay"
         @add-auto-response="handleAddAutoResponse"
+        @delete-selected="handleDeleteSelected"
       />
 
       <SessionDetail
-        v-if="selected"
-        :session="selected"
+        v-if="selectedSession"
+        :session="selectedSession"
         @add-auto-response="handleAddAutoResponse"
       />
-      <div v-else class="detail-placeholder">Select a request to inspect</div>
+      <div v-else class="detail-placeholder">
+        {{
+          selectedIds.length > 1
+            ? `${selectedIds.length} requests selected`
+            : "Select a request to inspect"
+        }}
+      </div>
     </div>
 
     <div class="main" v-else>
