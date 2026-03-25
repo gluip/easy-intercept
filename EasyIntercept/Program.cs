@@ -2,6 +2,7 @@ using EasyIntercept.AutoResponder;
 using EasyIntercept.Certificates;
 using EasyIntercept.Hubs;
 using EasyIntercept.Models;
+using EasyIntercept.Persistence;
 using EasyIntercept.Pins;
 using EasyIntercept.Proxy;
 using EasyIntercept.Storage;
@@ -32,12 +33,25 @@ builder.Services.AddHttpClient("replay").ConfigurePrimaryHttpMessageHandler(() =
 
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<PinStore>();
+builder.Services.AddSingleton<JsonPersistence>();
 builder.Services.AddSingleton<AutoResponderStore>();
 builder.Services.AddSingleton<RecordingStore>();
 builder.Services.AddSingleton<CertificateService>();
 builder.Services.AddHostedService<ProxyServer>();
 
 var app = builder.Build();
+
+// Initialize stores from disk
+var persistence = app.Services.GetRequiredService<JsonPersistence>();
+var autoStore = app.Services.GetRequiredService<AutoResponderStore>();
+var recStore = app.Services.GetRequiredService<RecordingStore>();
+autoStore.Init();
+recStore.Init();
+
+// Live reload on external file changes
+persistence.OnAutoResponderChanged = () => autoStore.ReloadFromDisk();
+persistence.OnRecordingsChanged = () => recStore.ReloadFromDisk();
+persistence.StartWatching();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

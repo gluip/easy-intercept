@@ -1,0 +1,9 @@
+{
+  "id": "378460b9-63e7-4bf7-b5c5-a948838ff315",
+  "name": "GET /get",
+  "urlPattern": "http://httpbin\\.org/get\\?foo=bar",
+  "method": "GET",
+  "bodyPattern": "",
+  "bodyPatternIsRegex": false,
+  "enabled": true
+}

@@ -1,0 +1,9 @@
+{
+  "id": "56cf0bf8-32ac-404f-9f7b-3ccc24662772",
+  "name": "DELETE /delete",
+  "urlPattern": "http://httpbin\\.org/delete",
+  "method": "DELETE",
+  "bodyPattern": "",
+  "bodyPatternIsRegex": false,
+  "enabled": true
+}

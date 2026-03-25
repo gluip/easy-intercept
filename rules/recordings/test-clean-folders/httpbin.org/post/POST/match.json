@@ -1,0 +1,9 @@
+{
+  "id": "dfc5b02f-c1d8-4a55-b9fa-761b99581c31",
+  "name": "POST /post",
+  "urlPattern": "http://httpbin\\.org/post",
+  "method": "POST",
+  "bodyPattern": "{\u0022test\u0022:true}",
+  "bodyPatternIsRegex": false,
+  "enabled": true
+}

@@ -1,0 +1,9 @@
+{
+  "id": "88077f05-3488-4588-a939-e4c408951dd4",
+  "name": "GET /html",
+  "urlPattern": "http://httpbin\\.org/html",
+  "method": "GET",
+  "bodyPattern": "",
+  "bodyPatternIsRegex": false,
+  "enabled": true
+}

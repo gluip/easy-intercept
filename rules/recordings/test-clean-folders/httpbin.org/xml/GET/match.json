@@ -1,0 +1,9 @@
+{
+  "id": "6ba33011-8332-4851-bcb6-19d075c7d327",
+  "name": "GET /xml",
+  "urlPattern": "http://httpbin\\.org/xml",
+  "method": "GET",
+  "bodyPattern": "",
+  "bodyPatternIsRegex": false,
+  "enabled": true
+}

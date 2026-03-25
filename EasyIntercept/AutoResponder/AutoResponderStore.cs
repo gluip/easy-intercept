@@ -1,15 +1,39 @@
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
+using EasyIntercept.Persistence;
 
 namespace EasyIntercept.AutoResponder;
 
 public class AutoResponderStore
 {
     private readonly ConcurrentDictionary<Guid, AutoResponderRule> _rules = new();
+    private readonly JsonPersistence _persistence;
 
-    public void AddOrUpdate(AutoResponderRule rule) => _rules[rule.Id] = rule;
+    public AutoResponderStore(JsonPersistence persistence)
+    {
+        _persistence = persistence;
+    }
 
-    public void Remove(Guid id) => _rules.TryRemove(id, out _);
+    public void Init()
+    {
+        _rules.Clear();
+        foreach (var rule in _persistence.LoadAutoResponderRules())
+            _rules[rule.Id] = rule;
+    }
+
+    public void ReloadFromDisk() => Init();
+
+    public void AddOrUpdate(AutoResponderRule rule)
+    {
+        _rules[rule.Id] = rule;
+        _persistence.SaveAutoResponderRule(rule);
+    }
+
+    public void Remove(Guid id)
+    {
+        _rules.TryRemove(id, out _);
+        _persistence.DeleteAutoResponderRule(id);
+    }
 
     public AutoResponderRule? Get(Guid id) =>
         _rules.TryGetValue(id, out var rule) ? rule : null;

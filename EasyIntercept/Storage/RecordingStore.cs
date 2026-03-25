@@ -1,13 +1,38 @@
 using System.Collections.Concurrent;
 using EasyIntercept.AutoResponder;
 using EasyIntercept.Models;
+using EasyIntercept.Persistence;
 
 namespace EasyIntercept.Storage;
 
 public class RecordingStore
 {
     private readonly ConcurrentDictionary<Guid, Recording> _recordings = new();
+    private readonly JsonPersistence _persistence;
     private Guid? _recordingId;
+
+    public RecordingStore(JsonPersistence persistence)
+    {
+        _persistence = persistence;
+    }
+
+    public void Init()
+    {
+        _recordings.Clear();
+        foreach (var rec in _persistence.LoadRecordings())
+            _recordings[rec.Id] = rec;
+    }
+
+    public void ReloadFromDisk()
+    {
+        var prevRecordingId = _recordingId;
+        Init();
+        // Preserve active capture session if the recording still exists
+        if (prevRecordingId.HasValue && _recordings.ContainsKey(prevRecordingId.Value))
+            _recordingId = prevRecordingId;
+        else
+            _recordingId = null;
+    }
 
     public IEnumerable<Recording> GetAll() => _recordings.Values.ToArray();
 
@@ -18,6 +43,7 @@ public class RecordingStore
     {
         var rec = new Recording { Name = name };
         _recordings[rec.Id] = rec;
+        _persistence.SaveRecordingMeta(rec);
         return rec;
     }
 
@@ -27,6 +53,7 @@ public class RecordingStore
         if (_recordings.TryRemove(id, out var rec))
         {
             if (rec.Active) rec.Active = false;
+            _persistence.DeleteRecording(rec);
             return true;
         }
         return false;
@@ -37,6 +64,7 @@ public class RecordingStore
         var rec = Get(id);
         if (rec == null) return null;
         rec.Name = name;
+        _persistence.SaveRecordingMeta(rec);
         return rec;
     }
 
@@ -75,6 +103,7 @@ public class RecordingStore
                 .FirstOrDefault(h => h.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)).Value
                 ?? "application/octet-stream";
             existing.Body = session.ResponseBody;
+            _persistence.SaveRecordingRule(rec, existing);
         }
         else
         {
@@ -83,7 +112,7 @@ public class RecordingStore
                 ?? "application/octet-stream";
 
             var url = new Uri(session.Url);
-            rec.Rules.Add(new AutoResponderRule
+            var rule = new AutoResponderRule
             {
                 Name = $"{session.Method} {url.AbsolutePath}",
                 Method = session.Method,
@@ -94,7 +123,9 @@ public class RecordingStore
                 StatusCode = session.ResponseStatus,
                 ContentType = ct,
                 Body = session.ResponseBody,
-            });
+            };
+            rec.Rules.Add(rule);
+            _persistence.SaveRecordingRule(rec, rule);
         }
     }
 
@@ -109,9 +140,16 @@ public class RecordingStore
 
         // Deactivate any currently active
         foreach (var rec in _recordings.Values)
-            rec.Active = false;
+        {
+            if (rec.Active)
+            {
+                rec.Active = false;
+                _persistence.SaveRecordingMeta(rec);
+            }
+        }
 
         target.Active = true;
+        _persistence.SaveRecordingMeta(target);
         return true;
     }
 
@@ -120,6 +158,7 @@ public class RecordingStore
         var target = Get(id);
         if (target == null) return false;
         target.Active = false;
+        _persistence.SaveRecordingMeta(target);
         return true;
     }
 
@@ -142,14 +181,18 @@ public class RecordingStore
         if (idx < 0) return false;
         updated.Id = rec.Rules[idx].Id; // preserve Id
         rec.Rules[idx] = updated;
+        _persistence.SaveRecordingRule(rec, updated);
         return true;
     }
 
     public bool ToggleRule(Guid recordingId, Guid ruleId)
     {
-        var rule = GetRule(recordingId, ruleId);
+        var rec = Get(recordingId);
+        if (rec == null) return false;
+        var rule = rec.Rules.FirstOrDefault(r => r.Id == ruleId);
         if (rule == null) return false;
         rule.Enabled = !rule.Enabled;
+        _persistence.SaveRecordingRule(rec, rule);
         return true;
     }
 
@@ -157,7 +200,9 @@ public class RecordingStore
     {
         var rec = Get(recordingId);
         if (rec == null) return false;
-        return rec.Rules.RemoveAll(r => r.Id == ruleId) > 0;
+        var removed = rec.Rules.RemoveAll(r => r.Id == ruleId) > 0;
+        if (removed) _persistence.DeleteRecordingRule(rec, ruleId);
+        return removed;
     }
 
     private static string EscapeRegex(string literal) =>
