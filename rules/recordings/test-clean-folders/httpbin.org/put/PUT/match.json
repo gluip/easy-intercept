@@ -1,9 +1,0 @@
-{
-  "id": "e7b7b237-127c-462d-8dc4-d1d635f94521",
-  "name": "PUT /put",
-  "urlPattern": "http://httpbin\\.org/put",
-  "method": "PUT",
-  "bodyPattern": "\u003Croot\u003Ehi\u003C/root\u003E",
-  "bodyPatternIsRegex": false,
-  "enabled": true
-}
