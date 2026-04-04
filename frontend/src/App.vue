@@ -22,6 +22,7 @@ const {
 
 const selectedIds = ref<string[]>([]);
 const tab = ref<"requests" | "autoresponder" | "recordings">("requests");
+const sessionToPrefill = ref<ProxySession | null>(null);
 
 const selectedSession = computed(() =>
   selectedIds.value.length === 1
@@ -39,7 +40,7 @@ function handleClear() {
 }
 
 function handleAddAutoResponse(session: ProxySession) {
-  pendingSession.value = session;
+  sessionToPrefill.value = session;
   tab.value = "autoresponder";
 }
 
@@ -136,7 +137,7 @@ onMounted(async () => {
     </div>
 
     <div class="main" v-else-if="tab === 'autoresponder'">
-      <AutoResponder />
+      <AutoResponder :prefill-session="sessionToPrefill" @prefilled="sessionToPrefill = null" />
     </div>
 
     <div class="main" v-else>

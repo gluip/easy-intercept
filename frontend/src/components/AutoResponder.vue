@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from "vue";
-import type { AutoResponderRule } from "../types";
+import { ref, watch, onMounted, nextTick } from "vue";
+import type { AutoResponderRule, ProxySession } from "../types";
 import type { RuleFormData } from "./RuleEditor.vue";
 import { useProxy } from "../composables/useProxy";
 import RuleEditor from "./RuleEditor.vue";
 
-const { rules, pendingSession, loadRules, createRule, updateRule, deleteRule } =
-  useProxy();
+const props = defineProps<{
+  prefillSession?: ProxySession | null;
+}>();
+
+const emit = defineEmits<{
+  prefilled: [];
+}>();
+
+const { rules, loadRules, createRule, updateRule, deleteRule } = useProxy();
 
 const selected = ref<AutoResponderRule | null>(null);
 const isNew = ref(false);
@@ -71,18 +78,23 @@ function handleToggle(rule: AutoResponderRule) {
   updateRule(updated);
 }
 
-function prefillFromSession(session: import("../types").ProxySession) {
+async function prefillFromSession(session: ProxySession) {
   selected.value = null;
   isNew.value = true;
+  
+  // Wait for RuleEditor to render
+  await nextTick();
+  
   if (!editorRef.value) return;
+  
   const url = new URL(session.url);
   editorRef.value.form.name = `${session.method} ${url.pathname}`;
   editorRef.value.form.method = session.method;
-  editorRef.value.form.urlPattern = url.pathname.replace(
+  editorRef.value.form.urlPattern = session.url.replace(
     /[.*+?^${}()|[\]\\]/g,
     "\\$&",
   );
-  editorRef.value.form.bodyPattern = "";
+  editorRef.value.form.bodyPattern = session.requestBody && !session.requestBody.startsWith("[") ? session.requestBody : "";
   editorRef.value.form.bodyPatternIsRegex = false;
   editorRef.value.form.enabled = true;
   editorRef.value.form.statusCode = session.responseStatus;
@@ -92,19 +104,19 @@ function prefillFromSession(session: import("../types").ProxySession) {
     "application/json";
   editorRef.value.form.headersText = "";
   editorRef.value.form.body = session.responseBody;
+  
+  emit("prefilled");
 }
 
-watch(pendingSession, (s) => {
-  if (s) {
-    prefillFromSession(s);
-    pendingSession.value = null;
+watch(() => props.prefillSession, (session) => {
+  if (session) {
+    prefillFromSession(session);
   }
 });
 
 onMounted(() => {
-  if (pendingSession.value) {
-    prefillFromSession(pendingSession.value);
-    pendingSession.value = null;
+  if (props.prefillSession) {
+    prefillFromSession(props.prefillSession);
   }
 });
 
