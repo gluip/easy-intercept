@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
@@ -194,8 +195,13 @@ public class ProxyConnection
             return;
         }
 
+        // Decompress gzip if present
+        var (actualBody, originalEncoding) = DecompressRequestBodyIfNeeded(reqBody, reqHeaders);
+
         // Check auto-responder rules (manual first, then active recording)
-        var reqBodyStr = reqBody.Length > 0 ? Encoding.UTF8.GetString(reqBody) : "";
+        var hasContentEncoding = originalEncoding != null;
+        var isReqText = reqHeaders.TryGetValue("Content-Type", out var reqCt) && IsTextContentType(reqCt);
+        var reqBodyStr = (actualBody.Length > 0 && isReqText) ? Encoding.UTF8.GetString(actualBody) : "";
         var activeRecording = _recordings.GetActive();
         var rule = _autoResponder.Match(method, url, reqBodyStr,
             activeRecording?.Rules);
@@ -227,7 +233,8 @@ public class ProxyConnection
                 Method = method,
                 Url = url,
                 RequestHeaders = reqHeaders,
-                RequestBody = reqBody.Length > 0 ? Encoding.UTF8.GetString(reqBody) : "",
+                RequestBody = (actualBody.Length > 0 && isReqText) ? Encoding.UTF8.GetString(actualBody) 
+                    : (actualBody.Length > 0 ? $"[{actualBody.Length} bytes binary]" : ""),
                 ResponseStatus = rule.StatusCode,
                 ResponseHeaders = arHeaders,
                 ResponseBody = rule.Body,
@@ -248,12 +255,13 @@ public class ProxyConnection
             if (key.Equals("Host", StringComparison.OrdinalIgnoreCase)) continue;
             if (key.Equals("Accept-Encoding", StringComparison.OrdinalIgnoreCase)) continue;
             if (key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)) continue;
+            if (key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)) continue;
             req.Headers.TryAddWithoutValidation(key, val);
         }
 
-        if (reqBody.Length > 0)
+        if (actualBody.Length > 0)
         {
-            req.Content = new ByteArrayContent(reqBody);
+            req.Content = new ByteArrayContent(actualBody);
             if (reqHeaders.TryGetValue("Content-Type", out var ct))
                 req.Content.Headers.TryAddWithoutValidation("Content-Type", ct);
         }
@@ -312,7 +320,8 @@ public class ProxyConnection
                 Method = method,
                 Url = url,
                 RequestHeaders = reqHeaders,
-                RequestBody = reqBody.Length > 0 ? Encoding.UTF8.GetString(reqBody) : "",
+                RequestBody = (actualBody.Length > 0 && isReqText) ? Encoding.UTF8.GetString(actualBody) 
+                    : (actualBody.Length > 0 ? $"[{actualBody.Length} bytes binary]" : ""),
                 ResponseStatus = (int)upstream.StatusCode,
                 ResponseHeaders = respHeaders,
                 ResponseBody = isText ? Encoding.UTF8.GetString(respBody) : $"[{respBody.Length} bytes]",
@@ -338,5 +347,48 @@ public class ProxyConnection
                 return (i, filled);
         }
         return (-1, filled);
+    }
+
+    private static bool IsTextContentType(string? contentType)
+    {
+        if (string.IsNullOrEmpty(contentType)) return false;
+        var lower = contentType.ToLowerInvariant();
+        return lower.Contains("text/") 
+            || lower.Contains("json") 
+            || lower.Contains("xml") 
+            || lower.Contains("javascript") 
+            || lower.Contains("x-www-form-urlencoded");
+    }
+
+    private static (byte[] body, string? originalEncoding) DecompressRequestBodyIfNeeded(
+        byte[] reqBody, 
+        Dictionary<string, string> reqHeaders)
+    {
+        byte[] actualBody = reqBody;
+        string? originalEncoding = null;
+
+        if (reqHeaders.TryGetValue("Content-Encoding", out var contentEncoding))
+        {
+            originalEncoding = contentEncoding;
+            if (contentEncoding.ToLowerInvariant().Contains("gzip"))
+            {
+                try
+                {
+                    using var input = new MemoryStream(reqBody);
+                    using var gzip = new GZipStream(input, CompressionMode.Decompress);
+                    using var output = new MemoryStream();
+                    gzip.CopyTo(output);
+                    actualBody = output.ToArray();
+                    reqHeaders.Remove("Content-Encoding");
+                    reqHeaders["Content-Length"] = actualBody.Length.ToString();
+                }
+                catch
+                {
+                    // Keep original if decompression fails
+                }
+            }
+        }
+
+        return (actualBody, originalEncoding);
     }
 }
