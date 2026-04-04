@@ -26,6 +26,124 @@ function isJson(s: string): boolean {
   const trimmed = s.trimStart();
   return trimmed.startsWith("{") || trimmed.startsWith("[");
 }
+
+function isXml(s: string): boolean {
+  if (!s) return false;
+  const trimmed = s.trimStart();
+  return trimmed.startsWith("<");
+}
+
+function formatXml(xml: string): string {
+  try {
+    const PADDING = "  ";
+    const reg = /(>)(<)(\/*)/g;
+    let formatted = xml.replace(reg, "$1\r\n$2$3");
+    let pad = 0;
+    return formatted
+      .split("\r\n")
+      .map((node) => {
+        let indent = 0;
+        if (node.match(/.+<\/\w[^>]*>$/)) {
+          indent = 0;
+        } else if (node.match(/^<\/\w/)) {
+          if (pad !== 0) {
+            pad -= 1;
+          }
+        } else if (node.match(/^<\w([^>]*[^\/])?>.*$/)) {
+          indent = 1;
+        } else {
+          indent = 0;
+        }
+        const padding = PADDING.repeat(pad);
+        pad += indent;
+        return padding + node;
+      })
+      .join("\r\n");
+  } catch {
+    return xml;
+  }
+}
+
+function formatBody(body: string): string {
+  if (isJson(body)) return formatJson(body);
+  if (isXml(body)) return formatXml(body);
+  return body || "(empty)";
+}
+
+function highlightXml(xml: string): string {
+  // First add highlighting, then escape everything except our span tags
+  let result = xml;
+  
+  // Match tag names
+  result = result.replace(/<\/?([a-zA-Z0-9_:-]+)/g, (match, tagName) => {
+    return match.replace(tagName, `##TAG_START##${tagName}##TAG_END##`);
+  });
+  
+  // Match attributes
+  result = result.replace(/\s([a-zA-Z0-9_:-]+)=("[^"]*"|'[^']*')/g, (match, attrName, attrValue) => {
+    return ` ##ATTR_START##${attrName}##ATTR_END##=##VALUE_START##${attrValue}##VALUE_END##`;
+  });
+  
+  // Now escape HTML
+  result = result
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  
+  // Replace markers with actual spans
+  result = result
+    .replace(/##TAG_START##/g, '<span class="xml-tag">')
+    .replace(/##TAG_END##/g, '</span>')
+    .replace(/##ATTR_START##/g, '<span class="xml-attr">')
+    .replace(/##ATTR_END##/g, '</span>')
+    .replace(/##VALUE_START##/g, '<span class="xml-value">')
+    .replace(/##VALUE_END##/g, '</span>');
+  
+  return result;
+}
+
+function highlightJson(json: string): string {
+  let result = json;
+  
+  // Mark strings
+  result = result.replace(/"([^"\\]|\\.)*"/g, (match) => {
+    return `##STRING##${match}##STRING_END##`;
+  });
+  
+  // Mark booleans and null
+  result = result.replace(/\b(true|false|null)\b/g, '##BOOL##$1##BOOL_END##');
+  
+  // Mark numbers
+  result = result.replace(/\b(-?\d+\.?\d*([eE][+-]?\d+)?)\b/g, '##NUM##$1##NUM_END##');
+  
+  // Escape HTML
+  result = result
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  
+  // Replace markers - first handle keys (strings followed by :)
+  result = result.replace(/##STRING##("(?:[^"\\]|\\.)*")##STRING_END##(\s*):/g, 
+    '<span class="json-key">$1</span>$2:');
+  
+  // Then remaining strings as values
+  result = result.replace(/##STRING##/g, '<span class="json-string">').replace(/##STRING_END##/g, '</span>');
+  
+  // Booleans
+  result = result.replace(/##BOOL##/g, '<span class="json-boolean">').replace(/##BOOL_END##/g, '</span>');
+  
+  // Numbers
+  result = result.replace(/##NUM##/g, '<span class="json-number">').replace(/##NUM_END##/g, '</span>');
+  
+  return result;
+}
+
+function formatBodyHtml(body: string): string {
+  const formatted = formatBody(body);
+  if (isJson(body)) return highlightJson(formatted);
+  if (isXml(body)) return highlightXml(formatted);
+  return formatted.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 </script>
 
 <template>
@@ -46,21 +164,13 @@ function isJson(s: string): boolean {
     <pre>{{ formatJson(session.requestHeaders) }}</pre>
 
     <h3>Request Body</h3>
-    <pre>{{
-      isJson(session.requestBody)
-        ? formatJson(session.requestBody)
-        : session.requestBody || "(empty)"
-    }}</pre>
+    <pre v-html="formatBodyHtml(session.requestBody)"></pre>
 
     <h3>Response Headers</h3>
     <pre>{{ formatJson(session.responseHeaders) }}</pre>
 
     <h3>Response Body</h3>
-    <pre>{{
-      isJson(session.responseBody)
-        ? formatJson(session.responseBody)
-        : session.responseBody || "(empty)"
-    }}</pre>
+    <pre v-html="formatBodyHtml(session.responseBody)"></pre>
   </div>
 </template>
 
@@ -117,5 +227,28 @@ pre {
 .ar-btn:hover {
   background: #dcdcaa;
   color: #1e1e1e;
+}
+
+/* Syntax highlighting */
+:deep(.xml-tag) {
+  color: #4ec9b0;
+}
+:deep(.xml-attr) {
+  color: #9cdcfe;
+}
+:deep(.xml-value) {
+  color: #ce9178;
+}
+:deep(.json-key) {
+  color: #9cdcfe;
+}
+:deep(.json-string) {
+  color: #ce9178;
+}
+:deep(.json-number) {
+  color: #b5cea8;
+}
+:deep(.json-boolean) {
+  color: #569cd6;
 }
 </style>
