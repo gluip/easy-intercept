@@ -105,6 +105,16 @@ async function prefillFromSession(session: ProxySession) {
   editorRef.value.form.headersText = "";
   editorRef.value.form.body = session.responseBody;
   
+  console.log("Prefilled form with session:", session.responseBody);
+  // Auto-format body
+  await nextTick();
+  const body = session.responseBody.trimStart();
+  if (body.startsWith("{") || body.startsWith("[")) {
+    editorRef.value.formatJson();
+  } else if (body.startsWith("<")) {
+    editorRef.value.formatXml();
+  }
+  
   emit("prefilled");
 }
 

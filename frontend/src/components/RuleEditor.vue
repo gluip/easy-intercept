@@ -82,34 +82,46 @@ function loadRule(rule: AutoResponderRule | null | undefined) {
 
 watch(() => props.rule, loadRule, { immediate: true });
 
-function formatJson() {
+const formatJson = () => {
   try {
     form.body = JSON.stringify(JSON.parse(form.body), null, 2);
   } catch {
     /* not valid JSON */
   }
-}
+};
 
-function formatXml() {
-  let formatted = "";
-  let indent = 0;
-  const lines = form.body.replace(/>\s*</g, ">\n<").split("\n");
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    if (trimmed.startsWith("</")) indent--;
-    formatted += "  ".repeat(Math.max(0, indent)) + trimmed + "\n";
-    if (
-      trimmed.startsWith("<") &&
-      !trimmed.startsWith("</") &&
-      !trimmed.startsWith("<?") &&
-      !trimmed.endsWith("/>") &&
-      !trimmed.includes("</")
-    )
-      indent++;
+const formatXml = () => {
+  try {
+    const PADDING = "  ";
+    const xml = form.body;
+    const reg = /(>)(<)(\/*)/g;
+    let formatted = xml.replace(reg, "$1\r\n$2$3");
+    let pad = 0;
+    
+    form.body = formatted
+      .split("\r\n")
+      .map((node) => {
+        let indent = 0;
+        if (node.match(/.+<\/\w[^>]*>$/)) {
+          indent = 0;
+        } else if (node.match(/^<\/\w/)) {
+          if (pad !== 0) {
+            pad -= 1;
+          }
+        } else if (node.match(/^<\w([^>]*[^\/])?>.*$/)) {
+          indent = 1;
+        } else {
+          indent = 0;
+        }
+        const padding = PADDING.repeat(pad);
+        pad += indent;
+        return padding + node;
+      })
+      .join("\r\n");
+  } catch {
+    /* not valid XML */
   }
-  form.body = formatted.trimEnd();
-}
+};
 
 function handleSave() {
   emit("save", { ...form });
@@ -119,7 +131,7 @@ function handleDelete() {
   emit("delete");
 }
 
-defineExpose({ form, loadRule });
+defineExpose({ form, loadRule, formatJson, formatXml });
 </script>
 
 <template>
