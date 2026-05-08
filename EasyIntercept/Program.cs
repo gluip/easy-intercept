@@ -36,6 +36,7 @@ builder.Services.AddSingleton<PinStore>();
 builder.Services.AddSingleton<JsonPersistence>();
 builder.Services.AddSingleton<AutoResponderStore>();
 builder.Services.AddSingleton<RecordingStore>();
+builder.Services.AddSingleton<AnalysisStore>();
 builder.Services.AddSingleton<CertificateService>();
 builder.Services.AddHostedService<ProxyServer>();
 
@@ -45,12 +46,15 @@ var app = builder.Build();
 var persistence = app.Services.GetRequiredService<JsonPersistence>();
 var autoStore = app.Services.GetRequiredService<AutoResponderStore>();
 var recStore = app.Services.GetRequiredService<RecordingStore>();
+var analysisStore = app.Services.GetRequiredService<AnalysisStore>();
 autoStore.Init();
 recStore.Init();
+analysisStore.Init();
 
 // Live reload on external file changes
 persistence.OnAutoResponderChanged = () => autoStore.ReloadFromDisk();
 persistence.OnRecordingsChanged = () => recStore.ReloadFromDisk();
+persistence.OnAnalysisChanged = () => analysisStore.ReloadFromDisk();
 persistence.StartWatching();
 
 app.UseDefaultFiles();
@@ -211,5 +215,36 @@ app.MapPost("/api/recordings/{id:guid}/rules/{ruleId:guid}/toggle",
 app.MapDelete("/api/recordings/{id:guid}/rules/{ruleId:guid}",
     (Guid id, Guid ruleId, RecordingStore store) =>
     store.DeleteRule(id, ruleId) ? Results.Ok() : Results.NotFound());
+
+// Analysis
+app.MapGet("/api/analysis/runs", (AnalysisStore store) =>
+    Results.Ok(store.GetAll()));
+
+app.MapGet("/api/analysis/status", (AnalysisStore store) =>
+    Results.Ok(store.GetStatus()));
+
+app.MapPost("/api/analysis/start", (AnalysisRun input, AnalysisStore store) =>
+    Results.Ok(store.StartRun(input.Name, input.HostFilter)));
+
+app.MapPost("/api/analysis/stop", (AnalysisStore store) =>
+{
+    store.StopRun();
+    return Results.Ok();
+});
+
+app.MapDelete("/api/analysis/runs/{id:guid}", (Guid id, AnalysisStore store) =>
+    store.Delete(id) ? Results.Ok() : Results.NotFound());
+
+app.MapGet("/api/analysis/runs/{id:guid}/events", (Guid id, AnalysisStore store) =>
+{
+    var run = store.Get(id);
+    return run != null ? Results.Ok(store.GetEventSummaries(id)) : Results.NotFound();
+});
+
+app.MapGet("/api/analysis/runs/{id:guid}/events/{sequence:int}", (Guid id, int sequence, AnalysisStore store) =>
+{
+    var analysisEvent = store.GetEvent(id, sequence);
+    return analysisEvent != null ? Results.Ok(analysisEvent) : Results.NotFound();
+});
 
 await app.RunAsync();

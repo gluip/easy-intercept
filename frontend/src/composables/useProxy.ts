@@ -5,6 +5,10 @@ import type {
   AutoResponderRule,
   Recording,
   RecordingStatus,
+  AnalysisRun,
+  AnalysisStatus,
+  AnalysisEvent,
+  AnalysisEventSummary,
 } from "../types";
 
 const sessions = ref<ProxySession[]>([]);
@@ -13,6 +17,10 @@ const recordings = ref<Recording[]>([]);
 const recordingStatus = ref<RecordingStatus>({
   recordingId: null,
   activeId: null,
+});
+const analysisRuns = ref<AnalysisRun[]>([]);
+const analysisStatus = ref<AnalysisStatus>({
+  runId: null,
 });
 const pendingSession = ref<ProxySession | null>(null);
 const connected = ref(false);
@@ -180,12 +188,60 @@ async function deleteRecordingRule(recordingId: string, ruleId: string) {
   });
 }
 
+// --- Analysis ---
+
+async function loadAnalysisRuns() {
+  const r = await fetch("/api/analysis/runs");
+  analysisRuns.value = await r.json();
+}
+
+async function loadAnalysisStatus() {
+  const r = await fetch("/api/analysis/status");
+  analysisStatus.value = await r.json();
+}
+
+async function startAnalysis(name: string, hostFilter: string): Promise<AnalysisRun> {
+  const r = await fetch("/api/analysis/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, hostFilter }),
+  });
+  const created = await r.json();
+  await loadAnalysisRuns();
+  await loadAnalysisStatus();
+  return created;
+}
+
+async function stopAnalysis() {
+  await fetch("/api/analysis/stop", { method: "POST" });
+  await loadAnalysisRuns();
+  await loadAnalysisStatus();
+}
+
+async function deleteAnalysisRun(id: string) {
+  await fetch(`/api/analysis/runs/${id}`, { method: "DELETE" });
+  analysisRuns.value = analysisRuns.value.filter((r) => r.id !== id);
+  await loadAnalysisStatus();
+}
+
+async function loadAnalysisEvents(runId: string): Promise<AnalysisEventSummary[]> {
+  const r = await fetch(`/api/analysis/runs/${runId}/events`);
+  return r.json();
+}
+
+async function loadAnalysisEvent(runId: string, sequence: number): Promise<AnalysisEvent> {
+  const r = await fetch(`/api/analysis/runs/${runId}/events/${sequence}`);
+  return r.json();
+}
+
 export function useProxy() {
   return {
     sessions: readonly(sessions),
     rules,
     recordings,
     recordingStatus: readonly(recordingStatus),
+    analysisRuns,
+    analysisStatus: readonly(analysisStatus),
     pendingSession,
     connected: readonly(connected),
     connect,
@@ -209,5 +265,12 @@ export function useProxy() {
     updateRecordingRule,
     toggleRecordingRule,
     deleteRecordingRule,
+    loadAnalysisRuns,
+    loadAnalysisStatus,
+    startAnalysis,
+    stopAnalysis,
+    deleteAnalysisRun,
+    loadAnalysisEvents,
+    loadAnalysisEvent,
   };
 }

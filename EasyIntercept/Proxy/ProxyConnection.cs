@@ -27,6 +27,7 @@ public class ProxyConnection
     private readonly PinStore _pins;
     private readonly AutoResponderStore _autoResponder;
     private readonly RecordingStore _recordings;
+    private readonly AnalysisStore _analysis;
     private readonly IHubContext<ProxyHub> _hub;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly CertificateService _certs;
@@ -37,6 +38,7 @@ public class ProxyConnection
         PinStore pins,
         AutoResponderStore autoResponder,
         RecordingStore recordings,
+        AnalysisStore analysis,
         IHubContext<ProxyHub> hub,
         IHttpClientFactory httpClientFactory,
         CertificateService certs)
@@ -46,6 +48,7 @@ public class ProxyConnection
         _pins = pins;
         _autoResponder = autoResponder;
         _recordings = recordings;
+        _analysis = analysis;
         _hub = hub;
         _httpClientFactory = httpClientFactory;
         _certs = certs;
@@ -242,6 +245,7 @@ public class ProxyConnection
             };
             _sessions.Add(arSession);
             await _hub.Clients.All.SendAsync("NewSession", arSession);
+            _analysis.Capture(method, url, reqHeaders, actualBody, rule.StatusCode, arHeaders, arBody, 0);
             return;
         }
 
@@ -330,6 +334,7 @@ public class ProxyConnection
 
             _sessions.Add(session);
             await _hub.Clients.All.SendAsync("NewSession", session);
+            _analysis.Capture(method, url, reqHeaders, actualBody, (int)upstream.StatusCode, respHeaders, respBody, sw.ElapsedMilliseconds);
 
             // Capture into recording (skip auto-responded sessions)
             _recordings.CaptureSession(session);

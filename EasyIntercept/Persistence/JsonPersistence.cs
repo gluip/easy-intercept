@@ -11,6 +11,7 @@ public class JsonPersistence : IDisposable
     private readonly string _basePath;
     private readonly string _autoResponderPath;
     private readonly string _recordingsPath;
+    private readonly string _analysisPath;
     private readonly Dictionary<Guid, string> _fileIndex = new();
     private readonly HashSet<string> _pendingWrites = new();
     private FileSystemWatcher? _watcher;
@@ -25,6 +26,7 @@ public class JsonPersistence : IDisposable
 
     public Action? OnAutoResponderChanged { get; set; }
     public Action? OnRecordingsChanged { get; set; }
+    public Action? OnAnalysisChanged { get; set; }
 
     public JsonPersistence(ILogger<JsonPersistence> log)
     {
@@ -33,9 +35,11 @@ public class JsonPersistence : IDisposable
         _basePath = Path.GetFullPath(_basePath);
         _autoResponderPath = Path.Combine(_basePath, "auto-responder");
         _recordingsPath = Path.Combine(_basePath, "recordings");
+        _analysisPath = Path.Combine(_basePath, "analysis");
 
         Directory.CreateDirectory(_autoResponderPath);
         Directory.CreateDirectory(_recordingsPath);
+        Directory.CreateDirectory(_analysisPath);
 
         _log.LogInformation("Rules path: {Path}", _basePath);
     }
@@ -547,6 +551,194 @@ public class JsonPersistence : IDisposable
         }
     }
 
+    // --- Analysis ---
+
+    public List<AnalysisRun> LoadAnalysisRuns()
+    {
+        var runs = new List<AnalysisRun>();
+        if (!Directory.Exists(_analysisPath)) return runs;
+
+        foreach (var dir in Directory.GetDirectories(_analysisPath))
+        {
+            var runPath = Path.Combine(dir, "run.json");
+            if (!File.Exists(runPath)) continue;
+
+            try
+            {
+                var run = JsonSerializer.Deserialize<AnalysisRun>(File.ReadAllText(runPath), JsonOpts);
+                if (run == null) continue;
+                runs.Add(run);
+                _fileIndex[run.Id] = Path.GetFullPath(dir);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Failed to load analysis run from {Dir}", dir);
+            }
+        }
+
+        return runs.OrderByDescending(r => r.CreatedAt).ToList();
+    }
+
+    public void SaveAnalysisRunMeta(AnalysisRun run)
+    {
+        var slug = Slugify(run.Name);
+        var newDir = ResolveAnalysisFolder(slug, run.Id);
+
+        if (_fileIndex.TryGetValue(run.Id, out var oldDir)
+            && Directory.Exists(oldDir)
+            && !string.Equals(Path.GetFullPath(oldDir), Path.GetFullPath(newDir), StringComparison.OrdinalIgnoreCase))
+        {
+            Directory.Move(oldDir, newDir);
+        }
+
+        Directory.CreateDirectory(newDir);
+        WriteFile(Path.Combine(newDir, "run.json"), JsonSerializer.Serialize(run, JsonOpts));
+        _fileIndex[run.Id] = Path.GetFullPath(newDir);
+    }
+
+    public void SaveAnalysisEvent(AnalysisRun run, AnalysisEvent analysisEvent)
+    {
+        if (!_fileIndex.TryGetValue(run.Id, out var dir))
+        {
+            var slug = Slugify(run.Name);
+            dir = ResolveAnalysisFolder(slug, run.Id);
+            Directory.CreateDirectory(dir);
+            _fileIndex[run.Id] = Path.GetFullPath(dir);
+        }
+
+        analysisEvent.FileName = BuildAnalysisFileName(analysisEvent);
+        var filePath = Path.Combine(dir, analysisEvent.FileName);
+        WriteFile(filePath, JsonSerializer.Serialize(analysisEvent, JsonOpts));
+    }
+
+    public List<AnalysisEventSummary> LoadAnalysisEventSummaries(AnalysisRun run)
+    {
+        if (!_fileIndex.TryGetValue(run.Id, out var dir) || !Directory.Exists(dir))
+            return [];
+
+        var summaries = new List<AnalysisEventSummary>();
+        foreach (var file in Directory.GetFiles(dir, "*.json"))
+        {
+            if (Path.GetFileName(file).Equals("run.json", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            try
+            {
+                var analysisEvent = JsonSerializer.Deserialize<AnalysisEvent>(File.ReadAllText(file), JsonOpts);
+                if (analysisEvent == null) continue;
+                summaries.Add(new AnalysisEventSummary
+                {
+                    Sequence = analysisEvent.Sequence,
+                    FileName = analysisEvent.FileName,
+                    Timestamp = analysisEvent.Timestamp,
+                    Method = analysisEvent.Method,
+                    Url = analysisEvent.Url,
+                    Host = analysisEvent.Host,
+                    ResponseStatus = analysisEvent.ResponseStatus,
+                    DurationMs = analysisEvent.DurationMs,
+                });
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Failed to load analysis event from {File}", file);
+            }
+        }
+
+        return summaries.OrderBy(e => e.Sequence).ToList();
+    }
+
+    public AnalysisEvent? LoadAnalysisEvent(AnalysisRun run, int sequence)
+    {
+        if (!_fileIndex.TryGetValue(run.Id, out var dir) || !Directory.Exists(dir))
+            return null;
+
+        var prefix = sequence.ToString("D6") + "_";
+        var file = Directory.GetFiles(dir, prefix + "*.json").OrderBy(f => f, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+        if (file == null) return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<AnalysisEvent>(File.ReadAllText(file), JsonOpts);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to load analysis event {Sequence} from {RunId}", sequence, run.Id);
+            return null;
+        }
+    }
+
+    public void DeleteAnalysisRun(AnalysisRun run)
+    {
+        if (_fileIndex.TryGetValue(run.Id, out var dir) && Directory.Exists(dir))
+        {
+            Directory.Delete(dir, recursive: true);
+            _fileIndex.Remove(run.Id);
+        }
+    }
+
+    private string ResolveAnalysisFolder(string baseName, Guid runId)
+    {
+        var candidate = Path.Combine(_analysisPath, baseName);
+        if (IsAnalysisFolderOwned(candidate, runId))
+            return candidate;
+
+        for (var i = 1; ; i++)
+        {
+            candidate = Path.Combine(_analysisPath, $"{baseName}_{i}");
+            if (IsAnalysisFolderOwned(candidate, runId))
+                return candidate;
+        }
+    }
+
+    private bool IsAnalysisFolderOwned(string folder, Guid runId)
+    {
+        var fullPath = Path.GetFullPath(folder);
+        if (_fileIndex.TryGetValue(runId, out var indexed)
+            && string.Equals(indexed, fullPath, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!Directory.Exists(folder))
+            return true;
+
+        var runFile = Path.Combine(folder, "run.json");
+        if (!File.Exists(runFile))
+            return true;
+
+        try
+        {
+            var run = JsonSerializer.Deserialize<AnalysisRun>(File.ReadAllText(runFile), JsonOpts);
+            return run != null && run.Id == runId;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string BuildAnalysisFileName(AnalysisEvent analysisEvent)
+    {
+        var host = SanitizeAnalysisPart(analysisEvent.Host, 40);
+        var method = SanitizeAnalysisPart(analysisEvent.Method.ToLowerInvariant(), 16);
+        var path = "root";
+
+        if (Uri.TryCreate(analysisEvent.Url, UriKind.Absolute, out var uri))
+        {
+            var rawPath = Uri.UnescapeDataString(uri.AbsolutePath).Trim('/');
+            if (!string.IsNullOrWhiteSpace(rawPath))
+                path = SanitizeAnalysisPart(rawPath.Replace('/', '_'), 80);
+        }
+
+        return $"{analysisEvent.Sequence:D6}_{host}_{path}_{method}.json";
+    }
+
+    private static string SanitizeAnalysisPart(string value, int maxLength)
+    {
+        var sanitized = Regex.Replace(value.ToLowerInvariant(), @"[^a-z0-9._-]+", "_").Trim('_');
+        if (string.IsNullOrWhiteSpace(sanitized)) sanitized = "unknown";
+        if (sanitized.Length > maxLength) sanitized = sanitized[..maxLength];
+        return sanitized;
+    }
+
     // --- FileSystemWatcher ---
 
     public void StartWatching()
@@ -592,6 +784,11 @@ public class JsonPersistence : IDisposable
             {
                 _log.LogInformation("Recordings changed on disk");
                 OnRecordingsChanged?.Invoke();
+            }
+            else if (relative.StartsWith("analysis"))
+            {
+                _log.LogInformation("Analysis changed on disk");
+                OnAnalysisChanged?.Invoke();
             }
         }, null, 500, Timeout.Infinite);
     }

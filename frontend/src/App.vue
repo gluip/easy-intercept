@@ -6,11 +6,13 @@ import SessionList from "./components/SessionList.vue";
 import SessionDetail from "./components/SessionDetail.vue";
 import AutoResponder from "./components/AutoResponder.vue";
 import Recordings from "./components/Recordings.vue";
+import Analysis from "./components/Analysis.vue";
 
 const {
   sessions,
   connected,
   recordingStatus,
+  analysisStatus,
   pendingSession,
   connect,
   loadSessions,
@@ -18,10 +20,11 @@ const {
   replaySession,
   deleteSessions,
   loadRecordingStatus,
+  loadAnalysisStatus,
 } = useProxy();
 
 const selectedIds = ref<string[]>([]);
-const tab = ref<"requests" | "autoresponder" | "recordings">("requests");
+const tab = ref<"requests" | "autoresponder" | "recordings" | "analysis">("requests");
 const sessionToPrefill = ref<ProxySession | null>(null);
 
 const selectedSession = computed(() =>
@@ -66,6 +69,7 @@ onMounted(async () => {
   }
   await loadSessions();
   await loadRecordingStatus();
+  await loadAnalysisStatus();
 });
 </script>
 
@@ -96,6 +100,12 @@ onMounted(async () => {
         >
           Recordings
         </button>
+        <button
+          :class="{ active: tab === 'analysis' }"
+          @click="tab = 'analysis'"
+        >
+          Analysis
+        </button>
       </div>
       <div class="toolbar-status">
         <span v-if="recordingStatus.recordingId" class="status-recording"
@@ -104,6 +114,7 @@ onMounted(async () => {
         <span v-if="recordingStatus.activeId" class="status-playback"
           >▶ Playback</span
         >
+        <span v-if="analysisStatus.runId" class="status-analysis">◎ Analysis</span>
       </div>
       <div class="toolbar-actions" v-if="tab === 'requests'">
         <button @click="handleClear">Clear</button>
@@ -138,6 +149,10 @@ onMounted(async () => {
 
     <div class="main" v-else-if="tab === 'autoresponder'">
       <AutoResponder :prefill-session="sessionToPrefill" @prefilled="sessionToPrefill = null" />
+    </div>
+
+    <div class="main" v-else-if="tab === 'analysis'">
+      <Analysis />
     </div>
 
     <div class="main" v-else>
@@ -256,6 +271,10 @@ header small {
 }
 .status-playback {
   color: #4ec9b0;
+  font-size: 11px;
+}
+.status-analysis {
+  color: #dcdcaa;
   font-size: 11px;
 }
 @keyframes pulse {
