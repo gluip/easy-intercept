@@ -12,7 +12,6 @@ const emit = defineEmits<{
   select: [ids: string[]];
   copyUrl: [session: ProxySession];
   replay: [session: ProxySession];
-  addAutoResponse: [session: ProxySession];
   deleteSelected: [ids: string[]];
 }>();
 
@@ -28,7 +27,6 @@ const selectedSet = computed(() => new Set(props.selectedIds));
 const menuItems = [
   { label: "Copy URL", icon: "📋", action: "copy-url" },
   { label: "Replay", icon: "🔁", action: "replay" },
-  { label: "Add to Auto Responder", icon: "⚡", action: "add-auto-response" },
   { label: "Delete", icon: "🗑️", action: "delete" },
 ];
 
@@ -83,7 +81,6 @@ function onMenuSelect(action: string) {
   ctxMenu.value = null;
   if (action === "copy-url") emit("copyUrl", session);
   else if (action === "replay") emit("replay", session);
-  else if (action === "add-auto-response") emit("addAutoResponse", session);
   else if (action === "delete") emit("deleteSelected", [...props.selectedIds]);
 }
 

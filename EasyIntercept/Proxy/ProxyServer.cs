@@ -1,9 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
-using EasyIntercept.AutoResponder;
 using EasyIntercept.Certificates;
 using EasyIntercept.Hubs;
-using EasyIntercept.Pins;
 using EasyIntercept.Storage;
 using Microsoft.AspNetCore.SignalR;
 
@@ -13,10 +11,6 @@ public class ProxyServer : BackgroundService
 {
     private readonly ILogger<ProxyServer> _logger;
     private readonly SessionStore _sessions;
-    private readonly PinStore _pins;
-    private readonly AutoResponderStore _autoResponder;
-    private readonly RecordingStore _recordings;
-    private readonly AnalysisStore _analysis;
     private readonly IHubContext<ProxyHub> _hub;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly CertificateService _certs;
@@ -24,20 +18,12 @@ public class ProxyServer : BackgroundService
     public ProxyServer(
         ILogger<ProxyServer> logger,
         SessionStore sessions,
-        PinStore pins,
-        AutoResponderStore autoResponder,
-        RecordingStore recordings,
-        AnalysisStore analysis,
         IHubContext<ProxyHub> hub,
         IHttpClientFactory httpClientFactory,
         CertificateService certs)
     {
         _logger = logger;
         _sessions = sessions;
-        _pins = pins;
-        _autoResponder = autoResponder;
-        _recordings = recordings;
-        _analysis = analysis;
         _hub = hub;
         _httpClientFactory = httpClientFactory;
         _certs = certs;
@@ -70,7 +56,7 @@ public class ProxyServer : BackgroundService
 
             _ = Task.Run(async () =>
             {
-                var conn = new ProxyConnection(client, _sessions, _pins, _autoResponder, _recordings, _analysis, _hub, _httpClientFactory, _certs);
+                var conn = new ProxyConnection(client, _sessions, _hub, _httpClientFactory, _certs);
                 try
                 {
                     await conn.HandleAsync();

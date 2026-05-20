@@ -1,15 +1,11 @@
-using EasyIntercept.AutoResponder;
 using EasyIntercept.Certificates;
 using EasyIntercept.Hubs;
-using EasyIntercept.Models;
-using EasyIntercept.Persistence;
-using EasyIntercept.Pins;
 using EasyIntercept.Proxy;
 using EasyIntercept.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.WebHost.UseUrls("http://localhost:8080");
+builder.WebHost.UseUrls("http://*:8080");
 
 builder.Services.AddSignalR();
 
@@ -32,30 +28,10 @@ builder.Services.AddHttpClient("replay").ConfigurePrimaryHttpMessageHandler(() =
     });
 
 builder.Services.AddSingleton<SessionStore>();
-builder.Services.AddSingleton<PinStore>();
-builder.Services.AddSingleton<JsonPersistence>();
-builder.Services.AddSingleton<AutoResponderStore>();
-builder.Services.AddSingleton<RecordingStore>();
-builder.Services.AddSingleton<AnalysisStore>();
 builder.Services.AddSingleton<CertificateService>();
 builder.Services.AddHostedService<ProxyServer>();
 
 var app = builder.Build();
-
-// Initialize stores from disk
-var persistence = app.Services.GetRequiredService<JsonPersistence>();
-var autoStore = app.Services.GetRequiredService<AutoResponderStore>();
-var recStore = app.Services.GetRequiredService<RecordingStore>();
-var analysisStore = app.Services.GetRequiredService<AnalysisStore>();
-autoStore.Init();
-recStore.Init();
-analysisStore.Init();
-
-// Live reload on external file changes
-persistence.OnAutoResponderChanged = () => autoStore.ReloadFromDisk();
-persistence.OnRecordingsChanged = () => recStore.ReloadFromDisk();
-persistence.OnAnalysisChanged = () => analysisStore.ReloadFromDisk();
-persistence.StartWatching();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -98,55 +74,6 @@ app.MapPost("/api/sessions/{id:guid}/replay", async (Guid id, SessionStore store
     return Results.Ok(new { status = (int)resp.StatusCode, body });
 });
 
-app.MapPost("/api/sessions/{id:guid}/pin", (Guid id, SessionStore store, PinStore pins) =>
-{
-    var session = store.Get(id);
-    if (session is null) return Results.NotFound();
-
-    pins.Pin(session.Url, new PinnedResponse
-    {
-        StatusCode = session.ResponseStatus,
-        Headers = session.ResponseHeaders,
-        Body = session.ResponseBody,
-    });
-
-    return Results.Ok(new { pinned = session.Url });
-});
-
-app.MapDelete("/api/pins", (string url, PinStore pins) =>
-{
-    pins.Unpin(url);
-    return Results.Ok();
-});
-
-app.MapGet("/api/pins", (PinStore pins) =>
-    Results.Ok(pins.GetAll()));
-
-// Auto-responder CRUD
-app.MapGet("/api/auto-responder", (AutoResponderStore store) =>
-    Results.Ok(store.GetAll()));
-
-app.MapPost("/api/auto-responder", (AutoResponderRule rule, AutoResponderStore store) =>
-{
-    rule.Id = Guid.NewGuid();
-    store.AddOrUpdate(rule);
-    return Results.Ok(rule);
-});
-
-app.MapPut("/api/auto-responder/{id:guid}", (Guid id, AutoResponderRule rule, AutoResponderStore store) =>
-{
-    if (store.Get(id) is null) return Results.NotFound();
-    rule.Id = id;
-    store.AddOrUpdate(rule);
-    return Results.Ok(rule);
-});
-
-app.MapDelete("/api/auto-responder/{id:guid}", (Guid id, AutoResponderStore store) =>
-{
-    store.Remove(id);
-    return Results.Ok();
-});
-
 app.MapGet("/ca", (CertificateService certs) =>
 {
     var path = certs.CaCertPath;
@@ -154,97 +81,48 @@ app.MapGet("/ca", (CertificateService certs) =>
     return Results.Bytes(File.ReadAllBytes(path), "application/x-x509-ca-cert", "easyntercept-ca.crt");
 });
 
-// Recording CRUD
-app.MapGet("/api/recordings", (RecordingStore store) =>
-    Results.Ok(store.GetAll().Select(r => new
-    {
-        r.Id, r.Name, r.CreatedAt, r.Active,
-        RulesCount = r.Rules.Count,
-    })));
-
-app.MapPost("/api/recordings", (Recording input, RecordingStore store) =>
-    Results.Ok(store.Create(input.Name)));
-
-app.MapDelete("/api/recordings/{id:guid}", (Guid id, RecordingStore store) =>
-    store.Delete(id) ? Results.Ok() : Results.NotFound());
-
-app.MapPut("/api/recordings/{id:guid}", (Guid id, Recording input, RecordingStore store) =>
+app.MapGet("/install", async (HttpContext ctx) =>
 {
-    var rec = store.Rename(id, input.Name);
-    return rec != null ? Results.Ok(rec) : Results.NotFound();
-});
-
-app.MapPost("/api/recordings/{id:guid}/activate", (Guid id, RecordingStore store) =>
-    store.Activate(id) ? Results.Ok() : Results.NotFound());
-
-app.MapPost("/api/recordings/{id:guid}/deactivate", (Guid id, RecordingStore store) =>
-    store.Deactivate(id) ? Results.Ok() : Results.NotFound());
-
-app.MapPost("/api/recordings/start", (Recording input, RecordingStore store) =>
-{
-    var rec = store.StartRecording(input.Name);
-    return Results.Ok(rec);
-});
-
-app.MapPost("/api/recordings/stop", (RecordingStore store) =>
-{
-    store.StopRecording();
-    return Results.Ok();
-});
-
-app.MapGet("/api/recordings/status", (RecordingStore store) =>
-    Results.Ok(new { RecordingId = store.RecordingId, ActiveId = store.ActiveId }));
-
-app.MapGet("/api/recordings/{id:guid}/rules", (Guid id, RecordingStore store) =>
-{
-    var rec = store.Get(id);
-    return rec != null ? Results.Ok(rec.Rules) : Results.NotFound();
-});
-
-app.MapPut("/api/recordings/{id:guid}/rules/{ruleId:guid}",
-    (Guid id, Guid ruleId, AutoResponderRule rule, RecordingStore store) =>
-{
-    rule.Id = ruleId;
-    return store.UpdateRule(id, rule) ? Results.Ok(rule) : Results.NotFound();
-});
-
-app.MapPost("/api/recordings/{id:guid}/rules/{ruleId:guid}/toggle",
-    (Guid id, Guid ruleId, RecordingStore store) =>
-    store.ToggleRule(id, ruleId) ? Results.Ok() : Results.NotFound());
-
-app.MapDelete("/api/recordings/{id:guid}/rules/{ruleId:guid}",
-    (Guid id, Guid ruleId, RecordingStore store) =>
-    store.DeleteRule(id, ruleId) ? Results.Ok() : Results.NotFound());
-
-// Analysis
-app.MapGet("/api/analysis/runs", (AnalysisStore store) =>
-    Results.Ok(store.GetAll()));
-
-app.MapGet("/api/analysis/status", (AnalysisStore store) =>
-    Results.Ok(store.GetStatus()));
-
-app.MapPost("/api/analysis/start", (AnalysisRun input, AnalysisStore store) =>
-    Results.Ok(store.StartRun(input.Name, input.HostFilter)));
-
-app.MapPost("/api/analysis/stop", (AnalysisStore store) =>
-{
-    store.StopRun();
-    return Results.Ok();
-});
-
-app.MapDelete("/api/analysis/runs/{id:guid}", (Guid id, AnalysisStore store) =>
-    store.Delete(id) ? Results.Ok() : Results.NotFound());
-
-app.MapGet("/api/analysis/runs/{id:guid}/events", (Guid id, AnalysisStore store) =>
-{
-    var run = store.Get(id);
-    return run != null ? Results.Ok(store.GetEventSummaries(id)) : Results.NotFound();
-});
-
-app.MapGet("/api/analysis/runs/{id:guid}/events/{sequence:int}", (Guid id, int sequence, AnalysisStore store) =>
-{
-    var analysisEvent = store.GetEvent(id, sequence);
-    return analysisEvent != null ? Results.Ok(analysisEvent) : Results.NotFound();
+    var host = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
+    var caUrl = $"{host}/ca";
+    var html = $$"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8"/>
+          <meta name="viewport" content="width=device-width, initial-scale=1"/>
+          <title>Install EasyIntercept CA</title>
+          <style>
+            body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 20px; text-align: center; }
+            h1 { font-size: 1.4rem; }
+            .btn { display: inline-block; margin: 20px 0; padding: 14px 28px; background: #007aff; color: #fff;
+                   border-radius: 12px; text-decoration: none; font-size: 1.1rem; }
+            .qr { margin: 20px auto; }
+            ol { text-align: left; line-height: 1.8; }
+            code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; }
+          </style>
+          <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+        </head>
+        <body>
+          <h1>Install EasyIntercept CA Certificate</h1>
+          <p>Proxy address: <code>{{ctx.Request.Host.Host}}:8888</code></p>
+          <div id="qr" class="qr"></div>
+          <script>new QRCode(document.getElementById("qr"), { text: "{{caUrl}}", width: 200, height: 200 });</script>
+          <a class="btn" href="/ca">Download &amp; Install Certificate</a>
+          <ol>
+            <li>Scan the QR-code or tap the button above <strong>in Safari</strong></li>
+            <li>Tap <em>Allow</em> when asked to download a profile</li>
+            <li>Go to <strong>Settings → General → VPN &amp; Device Management</strong></li>
+            <li>Tap the <em>EasyIntercept</em> profile → <em>Install</em></li>
+            <li>Go to <strong>Settings → General → About → Certificate Trust Settings</strong></li>
+            <li>Enable full trust for <em>EasyIntercept CA</em></li>
+            <li>Set proxy to <code>{{ctx.Request.Host.Host}}:8888</code> under Wi-Fi settings</li>
+          </ol>
+        </body>
+        </html>
+        """;
+    ctx.Response.ContentType = "text/html";
+    await ctx.Response.WriteAsync(html);
 });
 
 await app.RunAsync();

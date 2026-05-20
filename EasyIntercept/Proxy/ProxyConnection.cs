@@ -4,11 +4,9 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using EasyIntercept.AutoResponder;
 using EasyIntercept.Certificates;
 using EasyIntercept.Hubs;
 using EasyIntercept.Models;
-using EasyIntercept.Pins;
 using EasyIntercept.Storage;
 using Microsoft.AspNetCore.SignalR;
 
@@ -24,10 +22,6 @@ public class ProxyConnection
 
     private readonly TcpClient _client;
     private readonly SessionStore _sessions;
-    private readonly PinStore _pins;
-    private readonly AutoResponderStore _autoResponder;
-    private readonly RecordingStore _recordings;
-    private readonly AnalysisStore _analysis;
     private readonly IHubContext<ProxyHub> _hub;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly CertificateService _certs;
@@ -35,20 +29,12 @@ public class ProxyConnection
     public ProxyConnection(
         TcpClient client,
         SessionStore sessions,
-        PinStore pins,
-        AutoResponderStore autoResponder,
-        RecordingStore recordings,
-        AnalysisStore analysis,
         IHubContext<ProxyHub> hub,
         IHttpClientFactory httpClientFactory,
         CertificateService certs)
     {
         _client = client;
         _sessions = sessions;
-        _pins = pins;
-        _autoResponder = autoResponder;
-        _recordings = recordings;
-        _analysis = analysis;
         _hub = hub;
         _httpClientFactory = httpClientFactory;
         _certs = certs;
@@ -189,65 +175,9 @@ public class ProxyConnection
             }
         }
 
-        // Check pin store
-        if (_pins.TryGet(url, out var pinned))
-        {
-            var pb = Encoding.UTF8.GetBytes(pinned!.Body);
-            await WriteRaw(stream, $"HTTP/1.1 {pinned.StatusCode} OK\r\nContent-Length: {pb.Length}\r\nX-EasyIntercept-Pinned: true\r\nConnection: close\r\n\r\n");
-            await stream.WriteAsync(pb);
-            return;
-        }
-
         // Decompress gzip if present
-        var (actualBody, originalEncoding) = DecompressRequestBodyIfNeeded(reqBody, reqHeaders);
-
-        // Check auto-responder rules (manual first, then active recording)
-        var hasContentEncoding = originalEncoding != null;
+        var (actualBody, _) = DecompressRequestBodyIfNeeded(reqBody, reqHeaders);
         var isReqText = reqHeaders.TryGetValue("Content-Type", out var reqCt) && IsTextContentType(reqCt);
-        var reqBodyStr = (actualBody.Length > 0 && isReqText) ? Encoding.UTF8.GetString(actualBody) : "";
-        var activeRecording = _recordings.GetActive();
-        var rule = _autoResponder.Match(method, url, reqBodyStr,
-            activeRecording?.Rules);
-        if (rule != null)
-        {
-            var arBody = Encoding.UTF8.GetBytes(rule.Body);
-            var arSb = new StringBuilder();
-            arSb.Append($"HTTP/1.1 {rule.StatusCode} OK\r\n");
-            arSb.Append($"Content-Type: {rule.ContentType}\r\n");
-            foreach (var (hk, hv) in rule.Headers)
-                arSb.Append($"{hk}: {hv}\r\n");
-            arSb.Append($"Content-Length: {arBody.Length}\r\n");
-            arSb.Append("X-EasyIntercept-AutoResponder: true\r\n");
-            arSb.Append("Connection: close\r\n\r\n");
-
-            await stream.WriteAsync(Encoding.ASCII.GetBytes(arSb.ToString()));
-            await stream.WriteAsync(arBody);
-
-            var arHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["Content-Type"] = rule.ContentType,
-                ["X-EasyIntercept-AutoResponder"] = "true",
-            };
-            foreach (var (hk, hv) in rule.Headers)
-                arHeaders[hk] = hv;
-
-            var arSession = new ProxySession
-            {
-                Method = method,
-                Url = url,
-                RequestHeaders = reqHeaders,
-                RequestBody = (actualBody.Length > 0 && isReqText) ? Encoding.UTF8.GetString(actualBody) 
-                    : (actualBody.Length > 0 ? $"[{actualBody.Length} bytes binary]" : ""),
-                ResponseStatus = rule.StatusCode,
-                ResponseHeaders = arHeaders,
-                ResponseBody = rule.Body,
-                DurationMs = 0,
-            };
-            _sessions.Add(arSession);
-            await _hub.Clients.All.SendAsync("NewSession", arSession);
-            _analysis.Capture(method, url, reqHeaders, actualBody, rule.StatusCode, arHeaders, arBody, 0);
-            return;
-        }
 
         // Build upstream request
         var httpClient = _httpClientFactory.CreateClient("proxy");
@@ -334,10 +264,6 @@ public class ProxyConnection
 
             _sessions.Add(session);
             await _hub.Clients.All.SendAsync("NewSession", session);
-            _analysis.Capture(method, url, reqHeaders, actualBody, (int)upstream.StatusCode, respHeaders, respBody, sw.ElapsedMilliseconds);
-
-            // Capture into recording (skip auto-responded sessions)
-            _recordings.CaptureSession(session);
         }
     }
 
