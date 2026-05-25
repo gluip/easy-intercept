@@ -26,12 +26,19 @@ interface GTurn {
   parts: GPart[];
 }
 
+interface ToolDef {
+  name: string;
+  description?: string;
+  parameters?: unknown; // JSON schema
+}
+
 interface ParsedLLM {
   provider: "gemini" | "anthropic" | "openai";
   modelVersion: string;
   system?: string;
   turns: GTurn[];
   responseTurn: GTurn | null;
+  tools: ToolDef[];
   promptTokens: number;
   responseTokens: number;
   cachedTokens: number;
@@ -69,11 +76,21 @@ const parsed = computed((): ParsedLLM | null => {
     if (provider.value === "gemini") {
       const u = res.usageMetadata ?? {};
       const cand = res.candidates?.[0];
+      // Extract Gemini tool declarations
+      const geminiTools: ToolDef[] = (req.tools ?? []).flatMap(
+        (t: Record<string, unknown>) =>
+          ((t.functionDeclarations ?? []) as Record<string, unknown>[]).map((fn) => ({
+            name: fn.name as string,
+            description: fn.description as string | undefined,
+            parameters: fn.parameters,
+          })),
+      );
       return {
         provider: "gemini",
         modelVersion: res.modelVersion ?? "unknown",
         turns: Array.isArray(req.contents) ? req.contents : [],
         responseTurn: cand?.content ?? null,
+        tools: geminiTools,
         promptTokens: u.promptTokenCount ?? 0,
         responseTokens: u.candidatesTokenCount ?? 0,
         cachedTokens: u.cachedContentTokenCount ?? 0,
@@ -97,12 +114,19 @@ const parsed = computed((): ParsedLLM | null => {
       }));
       const responseParts = anthropicContent(res.content);
       const responseTurn: GTurn | null = responseParts.length ? { role: "model", parts: responseParts } : null;
+      // Extract Anthropic tool declarations
+      const anthropicTools: ToolDef[] = ((req.tools ?? []) as Record<string, unknown>[]).map((t) => ({
+        name: t.name as string,
+        description: t.description as string | undefined,
+        parameters: t.input_schema,
+      }));
       return {
         provider: "anthropic",
         modelVersion: res.model ?? req.model ?? "unknown",
         system,
         turns,
         responseTurn,
+        tools: anthropicTools,
         promptTokens: u.input_tokens ?? 0,
         responseTokens: u.output_tokens ?? 0,
         cachedTokens: u.cache_read_input_tokens ?? 0,
@@ -225,6 +249,25 @@ function argPreview(args: Record<string, unknown> | undefined): string {
           <button class="raw-btn" @click="emit('openViewer', session, 'response')">
             ⬡ Res
           </button>
+        </div>
+      </div>
+
+      <!-- ── Tools ──────────────────────────────────────────── -->
+      <div v-if="parsed.tools.length" class="tools-section">
+        <div class="tools-header" @click="toggleKey('__tools__')">
+          <span class="tools-icon">⚙</span>
+          <span class="tools-title">{{ parsed.tools.length }} tool{{ parsed.tools.length === 1 ? '' : 's' }}</span>
+          <span class="tools-toggle">{{ isOpen('__tools__') ? '▼' : '▶' }}</span>
+        </div>
+        <div v-if="isOpen('__tools__')" class="tools-list">
+          <div v-for="tool in parsed.tools" :key="tool.name" class="tool-item">
+            <div class="tool-row" @click="toggleKey('tool-' + tool.name)">
+              <span class="tool-name">{{ tool.name }}</span>
+              <span v-if="tool.description" class="tool-desc">{{ tool.description }}</span>
+              <span v-if="tool.parameters" class="tool-schema-toggle">{{ isOpen('tool-' + tool.name) ? '▼' : '▶' }}</span>
+            </div>
+            <pre v-if="tool.parameters && isOpen('tool-' + tool.name)" class="tool-schema">{{ fmtJson(tool.parameters) }}</pre>
+          </div>
         </div>
       </div>
 
@@ -427,6 +470,97 @@ function argPreview(args: Record<string, unknown> | undefined): string {
 }
 .raw-btn:hover {
   border-color: #569cd6;
+}
+
+/* ── Tools section ────────────────────────────────────────── */
+.tools-section {
+  border: 1px solid #3e3e42;
+  border-radius: 3px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+.tools-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #252526;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+}
+.tools-header:hover {
+  background: #2a2d2e;
+}
+
+.tools-icon {
+  color: #dcdcaa;
+  font-size: 11px;
+}
+.tools-title {
+  color: #dcdcaa;
+  font-weight: 600;
+  flex: 1;
+}
+.tools-toggle {
+  color: #858585;
+  font-size: 9px;
+}
+
+.tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.tool-item {
+  border-top: 1px solid #3e3e42;
+}
+
+.tool-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.tool-row:hover {
+  background: #2a2d2e;
+}
+
+.tool-name {
+  font-size: 11px;
+  font-family: "Courier New", monospace;
+  color: #569cd6;
+  flex-shrink: 0;
+}
+.tool-desc {
+  font-size: 11px;
+  color: #9d9d9d;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-schema-toggle {
+  color: #858585;
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.tool-schema {
+  margin: 0;
+  padding: 8px 12px;
+  background: #0d0d0d;
+  font-size: 11px;
+  font-family: "Courier New", monospace;
+  color: #ce9178;
+  overflow-x: auto;
+  border-top: 1px solid #3e3e42;
+  white-space: pre;
 }
 
 /* ── Conversation ─────────────────────────────────────────── */
