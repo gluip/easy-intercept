@@ -4,6 +4,7 @@ import type { ProxySession } from "./types";
 import { useProxy } from "./composables/useProxy";
 import SessionList from "./components/SessionList.vue";
 import SessionDetail from "./components/SessionDetail.vue";
+import SessionViewer from "./components/SessionViewer.vue";
 
 const {
   sessions,
@@ -17,6 +18,7 @@ const {
 } = useProxy();
 
 const selectedIds = ref<string[]>([]);
+const listWidth = ref(600);;
 
 const selectedSession = computed(() =>
   selectedIds.value.length === 1
@@ -43,7 +45,40 @@ async function handleDeleteSelected(ids: string[]) {
   selectedIds.value = selectedIds.value.filter((id) => !ids.includes(id));
 }
 
+// Session viewer
+const viewerSession = ref<ProxySession | null>(null);
+const viewerTab = ref<"request" | "response">("request");
+
+function openViewer(session: ProxySession, tab: "request" | "response") {
+  viewerSession.value = session;
+  viewerTab.value = tab;
+}
+
+function closeViewer() {
+  viewerSession.value = null;
+}
+
+function startDrag(e: MouseEvent) {
+  const startX = e.clientX;
+  const startWidth = listWidth.value;
+  document.body.style.userSelect = "none";
+  document.body.style.cursor = "col-resize";
+
+  function onMove(ev: MouseEvent) {
+    listWidth.value = Math.max(200, Math.min(window.innerWidth - 200, startWidth + ev.clientX - startX));
+  }
+  function onUp() {
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+  }
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+}
+
 onMounted(async () => {
+  listWidth.value = Math.round(window.innerWidth * 0.5);
   try {
     await connect();
   } catch (e) {
@@ -69,17 +104,21 @@ onMounted(async () => {
     </div>
 
     <div class="main">
-      <SessionList
-        :sessions="sessions"
-        :selected-ids="selectedIds"
-        @select="selectSessions"
-        @replay="handleReplay"
-        @delete-selected="handleDeleteSelected"
-      />
+      <div class="list-pane" :style="{ width: listWidth + 'px' }">
+        <SessionList
+          :sessions="sessions"
+          :selected-ids="selectedIds"
+          @select="selectSessions"
+          @replay="handleReplay"
+          @delete-selected="handleDeleteSelected"
+        />
+      </div>
+      <div class="divider" @mousedown.prevent="startDrag" />
 
       <SessionDetail
         v-if="selectedSession"
         :session="selectedSession"
+        @open-viewer="openViewer"
       />
       <div v-else class="detail-placeholder">
         {{
@@ -95,6 +134,13 @@ onMounted(async () => {
         {{ connected ? "● Connected" : "✕ Disconnected" }}
       </span>
     </div>
+
+    <SessionViewer
+      v-if="viewerSession"
+      :session="viewerSession"
+      :initial-tab="viewerTab"
+      @close="closeViewer"
+    />
   </div>
 </template>
 
@@ -177,6 +223,23 @@ header small {
   display: flex;
   flex: 1;
   overflow: hidden;
+}
+
+.list-pane {
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.divider {
+  width: 4px;
+  flex-shrink: 0;
+  background: #3e3e42;
+  cursor: col-resize;
+  transition: background 0.15s;
+}
+.divider:hover {
+  background: #569cd6;
 }
 
 .detail-placeholder {

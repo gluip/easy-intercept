@@ -1,0 +1,584 @@
+<script setup lang="ts">
+import { computed, ref } from "vue";
+import type { ProxySession } from "../types";
+import { detectLLMProvider } from "../utils/llm-detection";
+
+const props = defineProps<{
+  session: ProxySession;
+}>();
+
+const emit = defineEmits<{
+  openViewer: [session: ProxySession, tab: "request" | "response"];
+}>();
+
+// ── Types ──────────────────────────────────────────────────
+
+interface GPart {
+  text?: string;
+  functionCall?: { id?: string; name: string; args: Record<string, unknown> };
+  functionResponse?: { name: string; response: unknown };
+  thoughtSignature?: string;
+}
+
+interface GTurn {
+  role: "user" | "model";
+  parts: GPart[];
+}
+
+interface ParsedLLM {
+  provider: "gemini" | "anthropic" | "openai";
+  modelVersion: string;
+  system?: string;
+  turns: GTurn[];
+  responseTurn: GTurn | null;
+  promptTokens: number;
+  responseTokens: number;
+  cachedTokens: number;
+  thoughtTokens: number;
+  finishReason: string;
+}
+
+// ── Parse ──────────────────────────────────────────────────
+
+const provider = computed(() => detectLLMProvider(props.session));
+
+/** Normalize an Anthropic content block array / string to GPart[] */
+function anthropicContent(content: unknown): GPart[] {
+  if (typeof content === "string") return [{ text: content }];
+  if (!Array.isArray(content)) return [];
+  return (content as Record<string, unknown>[]).flatMap((block): GPart[] => {
+    if (block.type === "text") return [{ text: block.text as string }];
+    if (block.type === "tool_use")
+      return [{ functionCall: { id: block.id as string, name: block.name as string, args: (block.input ?? {}) as Record<string, unknown> } }];
+    if (block.type === "tool_result") {
+      const resp = Array.isArray(block.content)
+        ? (block.content as Record<string, unknown>[]).map((c) => c.text).join("\n")
+        : block.content;
+      return [{ functionResponse: { name: block.tool_use_id as string, response: resp } }];
+    }
+    return [];
+  });
+}
+
+const parsed = computed((): ParsedLLM | null => {
+  try {
+    const req = JSON.parse(props.session.requestBody);
+    const res = JSON.parse(props.session.responseBody);
+
+    if (provider.value === "gemini") {
+      const u = res.usageMetadata ?? {};
+      const cand = res.candidates?.[0];
+      return {
+        provider: "gemini",
+        modelVersion: res.modelVersion ?? "unknown",
+        turns: Array.isArray(req.contents) ? req.contents : [],
+        responseTurn: cand?.content ?? null,
+        promptTokens: u.promptTokenCount ?? 0,
+        responseTokens: u.candidatesTokenCount ?? 0,
+        cachedTokens: u.cachedContentTokenCount ?? 0,
+        thoughtTokens: u.thoughtsTokenCount ?? 0,
+        finishReason: cand?.finishReason ?? "",
+      };
+    }
+
+    if (provider.value === "anthropic") {
+      const u = res.usage ?? {};
+      // Normalize system prompt to plain string
+      const sys = req.system;
+      let system: string | undefined;
+      if (typeof sys === "string") system = sys;
+      else if (Array.isArray(sys))
+        system = (sys as Record<string, unknown>[]).map((b) => b.text ?? "").join("\n");
+      // Normalize messages
+      const turns: GTurn[] = (req.messages ?? []).map((msg: Record<string, unknown>) => ({
+        role: msg.role === "assistant" ? "model" : "user",
+        parts: anthropicContent(msg.content),
+      }));
+      const responseParts = anthropicContent(res.content);
+      const responseTurn: GTurn | null = responseParts.length ? { role: "model", parts: responseParts } : null;
+      return {
+        provider: "anthropic",
+        modelVersion: res.model ?? req.model ?? "unknown",
+        system,
+        turns,
+        responseTurn,
+        promptTokens: u.input_tokens ?? 0,
+        responseTokens: u.output_tokens ?? 0,
+        cachedTokens: u.cache_read_input_tokens ?? 0,
+        thoughtTokens: 0,
+        finishReason: res.stop_reason ?? "",
+      };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+});
+
+// ── Expand / collapse ──────────────────────────────────────
+
+const expandedKeys = ref(new Set<string>());
+
+function toggleKey(key: string) {
+  const next = new Set(expandedKeys.value);
+  next.has(key) ? next.delete(key) : next.add(key);
+  expandedKeys.value = next;
+}
+
+function isOpen(key: string) {
+  return expandedKeys.value.has(key);
+}
+
+// ── Helpers ────────────────────────────────────────────────
+
+function fmtJson(val: unknown): string {
+  return JSON.stringify(val, null, 2);
+}
+
+// Returns true if the turn has any displayable parts
+function hasContent(parts: GPart[]): boolean {
+  return parts.some((p) => p.text || p.functionCall || p.functionResponse);
+}
+
+// Label for the turn's role indicator
+function turnLabel(turn: GTurn): "user" | "assistant" | "tool results" {
+  if (turn.role === "model") return "assistant";
+  const visible = turn.parts.filter(
+    (p) => p.text || p.functionCall || p.functionResponse,
+  );
+  if (visible.length > 0 && visible.every((p) => !!p.functionResponse)) {
+    return "tool results";
+  }
+  return "user";
+}
+
+// Arg key preview for collapsed function calls
+function argPreview(args: Record<string, unknown> | undefined): string {
+  if (!args) return "";
+  const keys = Object.keys(args);
+  return keys.length ? `(${keys.slice(0, 3).join(", ")}${keys.length > 3 ? ", …" : ""})` : "()";
+}
+</script>
+
+<template>
+  <div class="llm-detail">
+    <!-- ── Parse failure ─────────────────────────────────── -->
+    <template v-if="!parsed">
+      <div class="parse-error">
+        <span>Could not parse as LLM response.</span>
+        <button class="raw-btn" @click="emit('openViewer', session, 'response')">
+          View Raw
+        </button>
+      </div>
+    </template>
+
+    <template v-else>
+      <!-- ── Stats bar ─────────────────────────────────────── -->
+      <div class="stats-bar">
+        <span class="model-name">{{ parsed.modelVersion }}</span>
+        <div class="token-pills">
+          <span class="pill pill-prompt" title="Prompt tokens">
+            ↑ {{ parsed.promptTokens.toLocaleString() }}
+          </span>
+          <span
+            v-if="parsed.cachedTokens"
+            class="pill pill-cached"
+            title="Cached tokens"
+          >
+            💾 {{ parsed.cachedTokens.toLocaleString() }}
+          </span>
+          <span
+            v-if="parsed.thoughtTokens"
+            class="pill pill-thoughts"
+            title="Thinking tokens"
+          >
+            💭 {{ parsed.thoughtTokens.toLocaleString() }}
+          </span>
+          <span class="pill pill-response" title="Response tokens">
+            ↓ {{ parsed.responseTokens.toLocaleString() }}
+          </span>
+          <span class="pill pill-duration" title="Request duration">{{ session.durationMs }}ms</span>
+        </div>
+        <div class="stats-actions">
+          <button class="raw-btn" @click="emit('openViewer', session, 'request')">
+            ⬡ Req
+          </button>
+          <button class="raw-btn" @click="emit('openViewer', session, 'response')">
+            ⬡ Res
+          </button>
+        </div>
+      </div>
+
+      <!-- ── Conversation ──────────────────────────────────── -->
+      <div class="conversation">
+        <!-- ── New response (top) ────────────────────────────── -->
+        <div v-if="parsed.responseTurn" class="turn turn-model turn-new">
+          <div class="turn-label label-assistant">
+            assistant
+            <span class="new-badge">new</span>
+          </div>
+          <div class="turn-body">
+            <template
+              v-for="(part, pIdx) in parsed.responseTurn.parts"
+              :key="pIdx"
+            >
+              <div v-if="part.text" class="part-text">{{ part.text }}</div>
+              <div v-else-if="part.functionCall" class="part-fn-call">
+                <div class="fn-header" @click="toggleKey(`new-${pIdx}`)">
+                  <span class="fn-icon">⚙</span>
+                  <span class="fn-name">{{ part.functionCall.name }}</span>
+                  <span
+                    v-if="!isOpen(`new-${pIdx}`)"
+                    class="fn-args-preview"
+                  >
+                    {{ argPreview(part.functionCall.args) }}
+                  </span>
+                  <span class="fn-toggle">
+                    {{ isOpen(`new-${pIdx}`) ? "▼" : "▶" }}
+                  </span>
+                </div>
+                <pre
+                  v-if="isOpen(`new-${pIdx}`)"
+                  class="fn-body"
+                >{{ fmtJson(part.functionCall.args) }}</pre>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- History turns (reversed: newest first) -->
+        <template v-for="(turn, tIdx) in [...parsed.turns].reverse()" :key="tIdx">
+          <div
+            v-if="hasContent(turn.parts)"
+            :class="[
+              'turn',
+              `turn-${turn.role}`,
+              { 'turn-tool-results': turnLabel(turn) === 'tool results' },
+            ]"
+          >
+            <div :class="['turn-label', `label-${turnLabel(turn).replace(' ', '-')}`]">
+              {{ turnLabel(turn) }}
+            </div>
+            <div class="turn-body">
+              <template v-for="(part, pIdx) in turn.parts" :key="pIdx">
+                <!-- Text -->
+                <div v-if="part.text" class="part-text">{{ part.text }}</div>
+
+                <!-- Function call -->
+                <div v-else-if="part.functionCall" class="part-fn-call">
+                  <div
+                    class="fn-header"
+                    @click="toggleKey(`${tIdx}-${pIdx}`)"
+                  >
+                    <span class="fn-icon">⚙</span>
+                    <span class="fn-name">{{ part.functionCall.name }}</span>
+                    <span
+                      v-if="!isOpen(`${tIdx}-${pIdx}`)"
+                      class="fn-args-preview"
+                    >
+                      {{ argPreview(part.functionCall.args) }}
+                    </span>
+                    <span class="fn-toggle">
+                      {{ isOpen(`${tIdx}-${pIdx}`) ? "▼" : "▶" }}
+                    </span>
+                  </div>
+                  <pre
+                    v-if="isOpen(`${tIdx}-${pIdx}`)"
+                    class="fn-body"
+                  >{{ fmtJson(part.functionCall.args) }}</pre>
+                </div>
+
+                <!-- Function response -->
+                <div v-else-if="part.functionResponse" class="part-fn-response">
+                  <div
+                    class="fn-header"
+                    @click="toggleKey(`r${tIdx}-${pIdx}`)"
+                  >
+                    <span class="fn-icon">↩</span>
+                    <span class="fn-name">{{ part.functionResponse.name }}</span>
+                    <span class="fn-toggle">
+                      {{ isOpen(`r${tIdx}-${pIdx}`) ? "▼" : "▶" }}
+                    </span>
+                  </div>
+                  <pre
+                    v-if="isOpen(`r${tIdx}-${pIdx}`)"
+                    class="fn-body"
+                  >{{ fmtJson(part.functionResponse.response) }}</pre>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <!-- ── System prompt (Anthropic) ─────────────────────── -->
+        <div v-if="parsed.system" class="turn turn-system">
+          <div class="turn-label label-system">system</div>
+          <div class="turn-body">
+            <div class="part-text">{{ parsed.system }}</div>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+</template>
+
+<style scoped>
+.llm-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ── Stats bar ──────────────────────────────────────────── */
+.stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #252526;
+  border: 1px solid #3e3e42;
+  border-radius: 3px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.model-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: #4ec9b0;
+  font-family: "Courier New", monospace;
+  flex-shrink: 0;
+}
+
+.token-pills {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.pill {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-family: "Courier New", monospace;
+}
+.pill-prompt {
+  background: #1e2a3f;
+  color: #569cd6;
+}
+.pill-cached {
+  background: #1e3a1e;
+  color: #4ec9b0;
+}
+.pill-thoughts {
+  background: #2a1e3a;
+  color: #c586c0;
+}
+.pill-response {
+  background: #3a2e1e;
+  color: #dcdcaa;
+}
+.pill-duration {
+  background: #2a2a2a;
+  color: #858585;
+}
+
+.stats-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.raw-btn {
+  background: transparent;
+  color: #569cd6;
+  border: 1px solid #3e3e42;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.raw-btn:hover {
+  border-color: #569cd6;
+}
+
+/* ── Conversation ─────────────────────────────────────────── */
+.conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── Turn ─────────────────────────────────────────────────── */
+.turn {
+  border-radius: 3px;
+  border: 1px solid #3e3e42;
+  overflow: hidden;
+}
+
+.turn-tool-results {
+  border-color: #2a3a2a;
+  opacity: 0.9;
+}
+
+.turn-new {
+  border-color: #5a4a1e;
+}
+
+.turn-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.label-user {
+  background: #242424;
+  color: #858585;
+}
+.label-assistant {
+  background: #1a2535;
+  color: #569cd6;
+}
+.label-tool-results {
+  background: #1a2a1a;
+  color: #4ec9b0;
+}
+.label-system {
+  background: #1e1a2a;
+  color: #c586c0;
+}
+
+.turn-system {
+  border-left: 2px solid #3a2a4a;
+  opacity: 0.75;
+}
+
+.turn-new .turn-label {
+  background: #2a2010;
+  color: #dcdcaa;
+}
+
+.new-badge {
+  background: #5a4a1e;
+  color: #dcdcaa;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  text-transform: lowercase;
+  font-weight: normal;
+  letter-spacing: 0;
+}
+
+.turn-body {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ── Parts ────────────────────────────────────────────────── */
+.part-text {
+  font-size: 12px;
+  color: #d4d4d4;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Function call */
+.part-fn-call {
+  border: 1px solid #2a3a4a;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.part-fn-response {
+  border: 1px solid #1e3a2f;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.fn-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  user-select: none;
+}
+
+.part-fn-call .fn-header {
+  background: #1a2535;
+  color: #9cdcfe;
+}
+.part-fn-call .fn-header:hover {
+  background: #1e2f45;
+}
+
+.part-fn-response .fn-header {
+  background: #192b22;
+  color: #4ec9b0;
+}
+.part-fn-response .fn-header:hover {
+  background: #1e3a2f;
+}
+
+.fn-icon {
+  font-size: 11px;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.fn-name {
+  font-family: "Courier New", monospace;
+  font-weight: 600;
+}
+
+.fn-args-preview {
+  color: #6a8a9a;
+  font-family: "Courier New", monospace;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.fn-toggle {
+  margin-left: auto;
+  font-size: 9px;
+  opacity: 0.45;
+}
+
+.fn-body {
+  background: #161616;
+  border-top: 1px solid #2a2a2a;
+  margin: 0;
+  padding: 8px;
+  font-size: 11px;
+  color: #d4d4d4;
+  overflow-x: auto;
+  max-height: 280px;
+  overflow-y: auto;
+  white-space: pre;
+}
+
+/* ── Parse error ──────────────────────────────────────────── */
+.parse-error {
+  padding: 20px;
+  color: #858585;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+</style>

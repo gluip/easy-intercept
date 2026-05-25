@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import type { ProxySession } from "../types";
+import { isLLMRequest } from "../utils/llm-detection";
+import LLMSessionDetail from "./LLMSessionDetail.vue";
 
 const props = defineProps<{
   session: ProxySession;
@@ -7,7 +10,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   addAutoResponse: [session: ProxySession];
+  openViewer: [session: ProxySession, tab: "request" | "response"];
 }>();
+
+const isLLM = computed(() => isLLMRequest(props.session));
 
 function formatJson(obj: unknown): string {
   try {
@@ -160,17 +166,33 @@ function formatBodyHtml(body: string): string {
       </button>
     </div>
 
-    <h3>Request Headers</h3>
-    <pre>{{ formatJson(session.requestHeaders) }}</pre>
+    <!-- LLM request viewer -->
+    <LLMSessionDetail
+      v-if="isLLM"
+      :session="session"
+      @open-viewer="(s, t) => emit('openViewer', s, t)"
+    />
 
-    <h3>Request Body</h3>
-    <pre v-html="formatBodyHtml(session.requestBody)"></pre>
+    <!-- Standard request viewer -->
+    <template v-else>
+      <h3>Request Headers</h3>
+      <pre>{{ formatJson(session.requestHeaders) }}</pre>
 
-    <h3>Response Headers</h3>
-    <pre>{{ formatJson(session.responseHeaders) }}</pre>
+      <div class="section-hdr">
+        <h3>Request Body</h3>
+        <button class="view-btn" @click="emit('openViewer', session, 'request')">⬡ View</button>
+      </div>
+      <pre v-html="formatBodyHtml(session.requestBody)"></pre>
 
-    <h3>Response Body</h3>
-    <pre v-html="formatBodyHtml(session.responseBody)"></pre>
+      <h3>Response Headers</h3>
+      <pre>{{ formatJson(session.responseHeaders) }}</pre>
+
+      <div class="section-hdr">
+        <h3>Response Body</h3>
+        <button class="view-btn" @click="emit('openViewer', session, 'response')">⬡ View</button>
+      </div>
+      <pre v-html="formatBodyHtml(session.responseBody)"></pre>
+    </template>
   </div>
 </template>
 
@@ -226,6 +248,27 @@ pre {
 }
 .ar-btn:hover {
   background: #dcdcaa;
+  color: #1e1e1e;
+}
+
+.section-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0 4px;
+}
+.section-hdr h3 {
+  margin: 0;
+}
+.view-btn {
+  background: #1e2a3f;
+  color: #569cd6;
+  border-color: #569cd6;
+  font-size: 10px;
+  padding: 2px 7px;
+}
+.view-btn:hover {
+  background: #569cd6;
   color: #1e1e1e;
 }
 
