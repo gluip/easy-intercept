@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import type { ProxySession } from "../types";
 import { detectLLMProvider } from "../utils/llm-detection";
+import { calcCost, formatCost } from "../utils/llm-cost";
 
 const props = defineProps<{
   session: ProxySession;
@@ -115,7 +116,19 @@ const parsed = computed((): ParsedLLM | null => {
     return null;
   }
 });
+// ── Cost ──────────────────────────────────────────────────
 
+const cost = computed(() => {
+  if (!parsed.value || !provider.value || provider.value === "openai") return null;
+  return calcCost(
+    provider.value,
+    parsed.value.modelVersion,
+    parsed.value.promptTokens,
+    parsed.value.responseTokens,
+    parsed.value.cachedTokens,
+    parsed.value.thoughtTokens,
+  );
+});
 // ── Expand / collapse ──────────────────────────────────────
 
 const expandedKeys = ref(new Set<string>());
@@ -199,6 +212,11 @@ function argPreview(args: Record<string, unknown> | undefined): string {
             ↓ {{ parsed.responseTokens.toLocaleString() }}
           </span>
           <span class="pill pill-duration" title="Request duration">{{ session.durationMs }}ms</span>
+          <span
+            v-if="cost"
+            class="pill pill-cost"
+            :title="cost ? `input $${cost.inputCost.toFixed(4)} + output $${cost.outputCost.toFixed(4)} + cached $${cost.cachedCost.toFixed(4)}` : ''"
+          >{{ cost ? formatCost(cost) : '' }}</span>
         </div>
         <div class="stats-actions">
           <button class="raw-btn" @click="emit('openViewer', session, 'request')">
@@ -383,6 +401,12 @@ function argPreview(args: Record<string, unknown> | undefined): string {
 .pill-duration {
   background: #2a2a2a;
   color: #858585;
+}
+.pill-cost {
+  background: #1e2a1e;
+  color: #4ec9b0;
+  font-weight: 600;
+  cursor: default;
 }
 
 .stats-actions {
