@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import type { ProxySession } from "../types";
 import { detectLLMProvider } from "../utils/llm-detection";
 import { calcCost, formatCost } from "../utils/llm-cost";
+import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream } from "../utils/llm-stream-parser";
 
 const props = defineProps<{
   session: ProxySession;
@@ -19,6 +20,7 @@ interface GPart {
   functionCall?: { id?: string; name: string; args: Record<string, unknown> };
   functionResponse?: { name: string; response: unknown };
   thoughtSignature?: string;
+  thinking?: string;
 }
 
 interface GTurn {
@@ -56,6 +58,7 @@ function anthropicContent(content: unknown): GPart[] {
   if (!Array.isArray(content)) return [];
   return (content as Record<string, unknown>[]).flatMap((block): GPart[] => {
     if (block.type === "text") return [{ text: block.text as string }];
+    if (block.type === "thinking") return [{ thinking: block.thinking as string, thoughtSignature: block.signature as string }];
     if (block.type === "tool_use")
       return [{ functionCall: { id: block.id as string, name: block.name as string, args: (block.input ?? {}) as Record<string, unknown> } }];
     if (block.type === "tool_result") {
@@ -140,7 +143,20 @@ function parseOpenAIMessages(
 const parsed = computed((): ParsedLLM | null => {
   try {
     const req = JSON.parse(props.session.requestBody);
-    const res = JSON.parse(props.session.responseBody);
+    let res: Record<string, unknown>;
+
+    // If response is streaming SSE, parse it first
+    if (isStreamingResponse(props.session.responseBody)) {
+      if (provider.value === "openai") {
+        res = parseOpenAIStream(props.session.responseBody);
+      } else if (provider.value === "anthropic") {
+        res = parseAnthropicStream(props.session.responseBody);
+      } else {
+        res = JSON.parse(props.session.responseBody);
+      }
+    } else {
+      res = JSON.parse(props.session.responseBody);
+    }
 
     if (provider.value === "gemini") {
       const u = res.usageMetadata ?? {};
@@ -290,14 +306,14 @@ function fmtJson(val: unknown): string {
 
 // Returns true if the turn has any displayable parts
 function hasContent(parts: GPart[]): boolean {
-  return parts.some((p) => p.text || p.functionCall || p.functionResponse);
+  return parts.some((p) => p.text || p.thinking || p.functionCall || p.functionResponse);
 }
 
 // Label for the turn's role indicator
 function turnLabel(turn: GTurn): "user" | "assistant" | "tool results" {
   if (turn.role === "model") return "assistant";
   const visible = turn.parts.filter(
-    (p) => p.text || p.functionCall || p.functionResponse,
+    (p) => p.text || p.thinking || p.functionCall || p.functionResponse,
   );
   if (visible.length > 0 && visible.every((p) => !!p.functionResponse)) {
     return "tool results";
@@ -399,7 +415,11 @@ function argPreview(args: Record<string, unknown> | undefined): string {
               v-for="(part, pIdx) in parsed.responseTurn.parts"
               :key="pIdx"
             >
-              <div v-if="part.text" class="part-text">{{ part.text }}</div>
+              <div v-if="part.thinking" class="part-thinking">
+                <div class="thinking-label">💭 thinking</div>
+                <div class="thinking-text">{{ part.thinking }}</div>
+              </div>
+              <div v-else-if="part.text" class="part-text">{{ part.text }}</div>
               <div v-else-if="part.functionCall" class="part-fn-call">
                 <div class="fn-header" @click="toggleKey(`new-${pIdx}`)">
                   <span class="fn-icon">⚙</span>
@@ -438,8 +458,14 @@ function argPreview(args: Record<string, unknown> | undefined): string {
             </div>
             <div class="turn-body">
               <template v-for="(part, pIdx) in turn.parts" :key="pIdx">
+                <!-- Thinking -->
+                <div v-if="part.thinking" class="part-thinking">
+                  <div class="thinking-label">💭 thinking</div>
+                  <div class="thinking-text">{{ part.thinking }}</div>
+                </div>
+
                 <!-- Text -->
-                <div v-if="part.text" class="part-text">{{ part.text }}</div>
+                <div v-else-if="part.text" class="part-text">{{ part.text }}</div>
 
                 <!-- Function call -->
                 <div v-else-if="part.functionCall" class="part-fn-call">
@@ -764,6 +790,35 @@ function argPreview(args: Record<string, unknown> | undefined): string {
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Thinking */
+.part-thinking {
+  border: 1px solid #3e3e42;
+  border-radius: 3px;
+  background: #1a1a1a;
+  overflow: hidden;
+}
+
+.thinking-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 8px;
+  background: #252526;
+  color: #c586c0;
+  border-bottom: 1px solid #3e3e42;
+}
+
+.thinking-text {
+  font-size: 11px;
+  color: #9d9d9d;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 8px;
+  font-style: italic;
 }
 
 /* Function call */

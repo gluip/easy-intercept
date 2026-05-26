@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import type { ProxySession } from "../types";
 import ContextMenu from "./ContextMenu.vue";
 import { detectLLMProvider } from "../utils/llm-detection";
+import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream } from "../utils/llm-stream-parser";
 
 const props = defineProps<{
   sessions: readonly ProxySession[];
@@ -18,12 +19,31 @@ const emit = defineEmits<{
 
 const listEl = ref<HTMLElement>();
 const lastClickedId = ref<string | null>(null);
+const filterText = ref("");
+const llmOnly = ref(false);
 
 const ctxMenu = ref<{ session: ProxySession; x: number; y: number } | null>(
   null,
 );
 
 const selectedSet = computed(() => new Set(props.selectedIds));
+
+const filteredSessions = computed(() => {
+  let result = props.sessions;
+  
+  // Filter by LLM only
+  if (llmOnly.value) {
+    result = result.filter((s) => detectLLMProvider(s) !== null);
+  }
+  
+  // Filter by URL text
+  const needle = filterText.value.toLowerCase().trim();
+  if (needle) {
+    result = result.filter((s) => s.url.toLowerCase().includes(needle));
+  }
+  
+  return result;
+});
 
 const menuItems = [
   { label: "Copy URL", icon: "📋", action: "copy-url" },
@@ -197,7 +217,15 @@ function llmPreview(s: ProxySession): string | null {
   const provider = detectLLMProvider(s);
   if (!provider) return null;
   try {
-    const res = JSON.parse(s.responseBody);
+    let res: Record<string, unknown>;
+    if (isStreamingResponse(s.responseBody)) {
+      if (provider === "openai") res = parseOpenAIStream(s.responseBody);
+      else if (provider === "anthropic") res = parseAnthropicStream(s.responseBody);
+      else res = JSON.parse(s.responseBody);
+    } else {
+      res = JSON.parse(s.responseBody);
+    }
+
     let text: string | undefined;
     if (provider === "gemini") {
       text = res.candidates?.[0]?.content?.parts?.find(
@@ -220,7 +248,15 @@ function llmToolCalls(s: ProxySession): string[] {
   const provider = detectLLMProvider(s);
   if (!provider) return [];
   try {
-    const res = JSON.parse(s.responseBody);
+    let res: Record<string, unknown>;
+    if (isStreamingResponse(s.responseBody)) {
+      if (provider === "openai") res = parseOpenAIStream(s.responseBody);
+      else if (provider === "anthropic") res = parseAnthropicStream(s.responseBody);
+      else res = JSON.parse(s.responseBody);
+    } else {
+      res = JSON.parse(s.responseBody);
+    }
+
     if (provider === "gemini") {
       return (
         res.candidates?.[0]?.content?.parts ?? []
@@ -392,6 +428,18 @@ function convColor(s: ProxySession): string | null {
 
 <template>
   <div ref="listEl" class="session-list" tabindex="0">
+    <div class="filter-bar">
+      <input
+        v-model="filterText"
+        type="text"
+        placeholder="Filter by URL..."
+        class="filter-input"
+      />
+      <label class="llm-filter">
+        <input v-model="llmOnly" type="checkbox" />
+        <span>LLM requests only</span>
+      </label>
+    </div>
     <table>
       <thead>
         <tr>
@@ -422,7 +470,7 @@ function convColor(s: ProxySession): string | null {
       </thead>
       <tbody>
         <tr
-          v-for="s in sessions"
+          v-for="s in filteredSessions"
           :key="s.id"
           :data-id="s.id"
           :class="{ selected: selectedSet.has(s.id) }"
@@ -466,9 +514,14 @@ function convColor(s: ProxySession): string | null {
         </tr>
       </tbody>
     </table>
-    <div v-if="sessions.length === 0" class="empty-state">
-      No requests yet.<br />
-      Configure your browser/app to use proxy <strong>localhost:8888</strong>
+    <div v-if="filteredSessions.length === 0" class="empty-state">
+      <template v-if="filterText && sessions.length > 0">
+        No sessions match filter "{{ filterText }}".
+      </template>
+      <template v-else>
+        No requests yet.<br />
+        Configure your browser/app to use proxy <strong>localhost:8888</strong>
+      </template>
     </div>
 
     <ContextMenu
@@ -490,6 +543,49 @@ function convColor(s: ProxySession): string | null {
   outline: none;
 }
 
+.filter-bar {
+  background: #252526;
+  padding: 8px 10px;
+  border-bottom: 1px solid #3e3e42;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.filter-input {
+  flex: 1;
+  background: #3c3c3c;
+  border: 1px solid #3e3e42;
+  color: #cccccc;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  outline: none;
+}
+
+.filter-input:focus {
+  border-color: #569cd6;
+  background: #1e1e1e;
+}
+
+.llm-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #cccccc;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.llm-filter input[type="checkbox"] {
+  cursor: pointer;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -504,7 +600,7 @@ thead th {
   padding: 6px 10px;
   border-bottom: 1px solid #3e3e42;
   position: sticky;
-  top: 0;
+  top: 42px;
   overflow: hidden;
   white-space: nowrap;
 }
