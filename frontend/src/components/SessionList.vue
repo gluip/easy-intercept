@@ -327,6 +327,67 @@ function llmToolResults(s: ProxySession): { label: string; snippet: string }[] {
     return [];
   }
 }
+
+// ── Conversation coloring ─────────────────────────────────
+
+// Colors for conversation groups (soft, VS Code–palette friendly)
+const CONV_COLORS = [
+  "#569cd6", // blue
+  "#4ec9b0", // teal
+  "#dcdcaa", // yellow
+  "#c586c0", // purple
+  "#ce9178", // orange
+  "#6a9955", // green
+  "#f48771", // red
+  "#9cdcfe", // light blue
+];
+
+/** Extract a stable fingerprint for the conversation root (first user message). */
+function convFingerprint(s: ProxySession): string | null {
+  const provider = detectLLMProvider(s);
+  if (!provider) return null;
+  try {
+    const req = JSON.parse(s.requestBody);
+    let msgs: unknown[] = [];
+    if (provider === "gemini") msgs = req.contents ?? [];
+    else msgs = req.messages ?? [];
+    if (msgs.length === 0) return null;
+    // Use first message as root fingerprint (truncated to avoid huge strings)
+    return JSON.stringify(msgs[0]).slice(0, 300);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Map from fingerprint → color string.
+ * Only fingerprints appearing on 2+ sessions get a color.
+ */
+const conversationColorMap = computed(() => {
+  // Count occurrences
+  const counts = new Map<string, number>();
+  for (const s of props.sessions) {
+    const fp = convFingerprint(s);
+    if (fp) counts.set(fp, (counts.get(fp) ?? 0) + 1);
+  }
+  // Assign colors in order of first appearance, only for multi-session convos
+  const map = new Map<string, string>();
+  let idx = 0;
+  for (const s of props.sessions) {
+    const fp = convFingerprint(s);
+    if (fp && (counts.get(fp) ?? 0) >= 2 && !map.has(fp)) {
+      map.set(fp, CONV_COLORS[idx % CONV_COLORS.length]);
+      idx++;
+    }
+  }
+  return map;
+});
+
+function convColor(s: ProxySession): string | null {
+  const fp = convFingerprint(s);
+  if (!fp) return null;
+  return conversationColorMap.value.get(fp) ?? null;
+}
 </script>
 
 <template>
@@ -365,6 +426,7 @@ function llmToolResults(s: ProxySession): { label: string; snippet: string }[] {
           :key="s.id"
           :data-id="s.id"
           :class="{ selected: selectedSet.has(s.id) }"
+          :style="convColor(s) ? { boxShadow: `inset 3px 0 0 ${convColor(s)}` } : {}"
           @click="handleClick($event, s)"
           @contextmenu="onContextMenu($event, s)"
         >

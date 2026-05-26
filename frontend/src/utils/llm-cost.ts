@@ -32,6 +32,28 @@ const ANTHROPIC_PRICING: Array<[string, ModelPricing]> = [
   ["claude-haiku-3",   { inputPerMTok: 0.80,  outputPerMTok: 4.00,  cachedPerMTok: 0.08 }],
 ];
 
+// Ordered longest-prefix-first; cached = 0.5x input price for OpenAI
+const OPENAI_PRICING: Array<[string, ModelPricing]> = [
+  // gpt-5.x flagship (May 2026)
+  ["gpt-5.5-pro",   { inputPerMTok: 30.00, outputPerMTok: 180.00, cachedPerMTok: 0     }],
+  ["gpt-5.5",       { inputPerMTok: 5.00,  outputPerMTok: 30.00,  cachedPerMTok: 0.50  }],
+  ["gpt-5.4-pro",   { inputPerMTok: 30.00, outputPerMTok: 180.00, cachedPerMTok: 0     }],
+  ["gpt-5.4-mini",  { inputPerMTok: 0.75,  outputPerMTok: 4.50,   cachedPerMTok: 0.075 }],
+  ["gpt-5.4-nano",  { inputPerMTok: 0.20,  outputPerMTok: 1.25,   cachedPerMTok: 0.02  }],
+  ["gpt-5.4",       { inputPerMTok: 2.50,  outputPerMTok: 15.00,  cachedPerMTok: 0.25  }],
+  // gpt-4.1 series
+  ["gpt-4.1-mini",  { inputPerMTok: 0.40,  outputPerMTok: 1.60,   cachedPerMTok: 0.10  }],
+  ["gpt-4.1-nano",  { inputPerMTok: 0.10,  outputPerMTok: 0.40,   cachedPerMTok: 0.025 }],
+  ["gpt-4.1",       { inputPerMTok: 2.00,  outputPerMTok: 8.00,   cachedPerMTok: 0.50  }],
+  // gpt-4o series
+  ["gpt-4o-mini",   { inputPerMTok: 0.15,  outputPerMTok: 0.60,   cachedPerMTok: 0.075 }],
+  ["gpt-4o",        { inputPerMTok: 2.50,  outputPerMTok: 10.00,  cachedPerMTok: 1.25  }],
+  // o-series reasoning
+  ["o4-mini",       { inputPerMTok: 1.10,  outputPerMTok: 4.40,   cachedPerMTok: 0.275 }],
+  ["o3-mini",       { inputPerMTok: 1.10,  outputPerMTok: 4.40,   cachedPerMTok: 0.275 }],
+  ["o3",            { inputPerMTok: 10.00, outputPerMTok: 40.00,  cachedPerMTok: 2.50  }],
+];
+
 function matchPricing(
   modelId: string,
   table: Array<[string, ModelPricing]>,
@@ -72,6 +94,8 @@ export function calcCost(
     pricing = matchPricing(modelVersion, GEMINI_PRICING);
   } else if (provider === "anthropic") {
     pricing = matchPricing(modelVersion, ANTHROPIC_PRICING);
+  } else if (provider === "openai") {
+    pricing = matchPricing(modelVersion, OPENAI_PRICING);
   }
 
   if (!pricing) return null;
@@ -85,6 +109,13 @@ export function calcCost(
     const inputCost  = (nonCachedInput / M) * pricing.inputPerMTok;
     const cachedCost = (cachedTokens   / M) * pricing.cachedPerMTok;
     const outputCost = (totalOutput    / M) * pricing.outputPerMTok;
+    return { inputCost, outputCost, cachedCost, total: inputCost + outputCost + cachedCost };
+  } else if (provider === "openai") {
+    // promptTokens = total input (includes cached); cachedTokens = subset already cached
+    const nonCachedInput = Math.max(0, promptTokens - cachedTokens);
+    const inputCost  = (nonCachedInput / M) * pricing.inputPerMTok;
+    const cachedCost = (cachedTokens   / M) * pricing.cachedPerMTok;
+    const outputCost = (responseTokens / M) * pricing.outputPerMTok;
     return { inputCost, outputCost, cachedCost, total: inputCost + outputCost + cachedCost };
   } else {
     // Anthropic: promptTokens = non-cached input, cachedTokens = cache reads

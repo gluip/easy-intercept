@@ -68,6 +68,75 @@ function anthropicContent(content: unknown): GPart[] {
   });
 }
 
+/** Normalize OpenAI messages[] into turns + system prompt.
+ *  - tool_calls[].function.arguments is a JSON string → parse it
+ *  - role=tool messages become functionResponse parts (name resolved from call_id map)
+ */
+function parseOpenAIMessages(
+  messages: Record<string, unknown>[],
+): { turns: GTurn[]; system?: string } {
+  // Build call_id → function name map
+  const callIdToName = new Map<string, string>();
+  for (const msg of messages) {
+    if (Array.isArray(msg.tool_calls)) {
+      for (const tc of msg.tool_calls as Record<string, unknown>[]) {
+        const fn = tc.function as Record<string, unknown>;
+        callIdToName.set(tc.id as string, fn.name as string);
+      }
+    }
+  }
+
+  let system: string | undefined;
+  const turns: GTurn[] = [];
+
+  for (const msg of messages) {
+    const role = msg.role as string;
+
+    if (role === "system") {
+      const c = msg.content;
+      if (typeof c === "string") system = (system ? system + "\n" : "") + c;
+      continue;
+    }
+
+    if (role === "user") {
+      const parts: GPart[] = [];
+      if (typeof msg.content === "string" && msg.content)
+        parts.push({ text: msg.content });
+      else if (Array.isArray(msg.content)) {
+        for (const b of msg.content as Record<string, unknown>[]) {
+          if (b.type === "text" && b.text) parts.push({ text: b.text as string });
+        }
+      }
+      if (parts.length) turns.push({ role: "user", parts });
+      continue;
+    }
+
+    if (role === "assistant") {
+      const parts: GPart[] = [];
+      if (typeof msg.content === "string" && msg.content)
+        parts.push({ text: msg.content });
+      if (Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls as Record<string, unknown>[]) {
+          const fn = tc.function as Record<string, unknown>;
+          let args: Record<string, unknown> = {};
+          try { args = JSON.parse(fn.arguments as string); } catch { /* ignore */ }
+          parts.push({ functionCall: { id: tc.id as string, name: fn.name as string, args } });
+        }
+      }
+      if (parts.length) turns.push({ role: "model", parts });
+      continue;
+    }
+
+    if (role === "tool") {
+      const callId = msg.tool_call_id as string;
+      const name = callIdToName.get(callId) ?? callId;
+      turns.push({ role: "user", parts: [{ functionResponse: { name, response: msg.content } }] });
+    }
+  }
+
+  return { turns, system };
+}
+
 const parsed = computed((): ParsedLLM | null => {
   try {
     const req = JSON.parse(props.session.requestBody);
@@ -135,6 +204,52 @@ const parsed = computed((): ParsedLLM | null => {
       };
     }
 
+    if (provider.value === "openai") {
+      const u = res.usage ?? {};
+      const { turns, system } = parseOpenAIMessages(req.messages ?? []);
+      // Build response turn from choices[0].message
+      const msg = res.choices?.[0]?.message as Record<string, unknown> | undefined;
+      const responseParts: GPart[] = [];
+      if (msg) {
+        if (typeof msg.content === "string" && msg.content)
+          responseParts.push({ text: msg.content });
+        if (Array.isArray(msg.tool_calls)) {
+          for (const tc of msg.tool_calls as Record<string, unknown>[]) {
+            const fn = tc.function as Record<string, unknown>;
+            let args: Record<string, unknown> = {};
+            try { args = JSON.parse(fn.arguments as string); } catch { /* ignore */ }
+            responseParts.push({ functionCall: { id: tc.id as string, name: fn.name as string, args } });
+          }
+        }
+      }
+      const responseTurn: GTurn | null = responseParts.length
+        ? { role: "model", parts: responseParts }
+        : null;
+      // Extract tool declarations
+      const openaiTools: ToolDef[] = ((req.tools ?? []) as Record<string, unknown>[]).map((t) => {
+        const fn = t.function as Record<string, unknown>;
+        return {
+          name: fn.name as string,
+          description: fn.description as string | undefined,
+          parameters: fn.parameters,
+        };
+      });
+      const promptTokensDetails = u.prompt_tokens_details ?? {};
+      return {
+        provider: "openai",
+        modelVersion: res.model ?? req.model ?? "unknown",
+        system,
+        turns,
+        responseTurn,
+        tools: openaiTools,
+        promptTokens: u.prompt_tokens ?? 0,
+        responseTokens: u.completion_tokens ?? 0,
+        cachedTokens: promptTokensDetails.cached_tokens ?? 0,
+        thoughtTokens: 0,
+        finishReason: res.choices?.[0]?.finish_reason ?? "",
+      };
+    }
+
     return null;
   } catch {
     return null;
@@ -143,7 +258,7 @@ const parsed = computed((): ParsedLLM | null => {
 // ── Cost ──────────────────────────────────────────────────
 
 const cost = computed(() => {
-  if (!parsed.value || !provider.value || provider.value === "openai") return null;
+  if (!parsed.value || !provider.value) return null;
   return calcCost(
     provider.value,
     parsed.value.modelVersion,
