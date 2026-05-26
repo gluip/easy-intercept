@@ -217,7 +217,7 @@ function llmPreview(s: ProxySession): string | null {
   const provider = detectLLMProvider(s);
   if (!provider) return null;
   try {
-    let res: Record<string, unknown>;
+    let res: any;
     if (isStreamingResponse(s.responseBody)) {
       if (provider === "openai") res = parseOpenAIStream(s.responseBody);
       else if (provider === "anthropic") res = parseAnthropicStream(s.responseBody);
@@ -248,7 +248,7 @@ function llmToolCalls(s: ProxySession): string[] {
   const provider = detectLLMProvider(s);
   if (!provider) return [];
   try {
-    let res: Record<string, unknown>;
+    let res: any;
     if (isStreamingResponse(s.responseBody)) {
       if (provider === "openai") res = parseOpenAIStream(s.responseBody);
       else if (provider === "anthropic") res = parseAnthropicStream(s.responseBody);
