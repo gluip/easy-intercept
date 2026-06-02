@@ -4,28 +4,21 @@ import type { ProxySession } from "./types";
 import { useProxy } from "./composables/useProxy";
 import SessionList from "./components/SessionList.vue";
 import SessionDetail from "./components/SessionDetail.vue";
-import AutoResponder from "./components/AutoResponder.vue";
-import Recordings from "./components/Recordings.vue";
-import Analysis from "./components/Analysis.vue";
+import SessionViewer from "./components/SessionViewer.vue";
 
 const {
   sessions,
   connected,
-  recordingStatus,
-  analysisStatus,
   pendingSession,
   connect,
   loadSessions,
   clearSessions,
   replaySession,
   deleteSessions,
-  loadRecordingStatus,
-  loadAnalysisStatus,
 } = useProxy();
 
 const selectedIds = ref<string[]>([]);
-const tab = ref<"requests" | "autoresponder" | "recordings" | "analysis">("requests");
-const sessionToPrefill = ref<ProxySession | null>(null);
+const listWidth = ref(600);;
 
 const selectedSession = computed(() =>
   selectedIds.value.length === 1
@@ -42,15 +35,6 @@ function handleClear() {
   selectedIds.value = [];
 }
 
-function handleAddAutoResponse(session: ProxySession) {
-  sessionToPrefill.value = session;
-  tab.value = "autoresponder";
-}
-
-function handleCopyUrl(session: ProxySession) {
-  navigator.clipboard.writeText(session.url);
-}
-
 async function handleReplay(session: ProxySession) {
   await replaySession(session.id);
   await loadSessions();
@@ -61,15 +45,46 @@ async function handleDeleteSelected(ids: string[]) {
   selectedIds.value = selectedIds.value.filter((id) => !ids.includes(id));
 }
 
+// Session viewer
+const viewerSession = ref<ProxySession | null>(null);
+const viewerTab = ref<"request" | "response">("request");
+
+function openViewer(session: ProxySession, tab: "request" | "response") {
+  viewerSession.value = session;
+  viewerTab.value = tab;
+}
+
+function closeViewer() {
+  viewerSession.value = null;
+}
+
+function startDrag(e: MouseEvent) {
+  const startX = e.clientX;
+  const startWidth = listWidth.value;
+  document.body.style.userSelect = "none";
+  document.body.style.cursor = "col-resize";
+
+  function onMove(ev: MouseEvent) {
+    listWidth.value = Math.max(200, Math.min(window.innerWidth - 200, startWidth + ev.clientX - startX));
+  }
+  function onUp() {
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+  }
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+}
+
 onMounted(async () => {
+  listWidth.value = Math.round(window.innerWidth * 0.5);
   try {
     await connect();
   } catch (e) {
     console.error("SignalR connect failed:", e);
   }
   await loadSessions();
-  await loadRecordingStatus();
-  await loadAnalysisStatus();
 });
 </script>
 
@@ -81,62 +96,29 @@ onMounted(async () => {
     </header>
 
     <div class="toolbar">
-      <div class="tabs">
-        <button
-          :class="{ active: tab === 'requests' }"
-          @click="tab = 'requests'"
-        >
-          Requests
-        </button>
-        <button
-          :class="{ active: tab === 'autoresponder' }"
-          @click="tab = 'autoresponder'"
-        >
-          Auto Responder
-        </button>
-        <button
-          :class="{ active: tab === 'recordings' }"
-          @click="tab = 'recordings'"
-        >
-          Recordings
-        </button>
-        <button
-          :class="{ active: tab === 'analysis' }"
-          @click="tab = 'analysis'"
-        >
-          Analysis
-        </button>
-      </div>
-      <div class="toolbar-status">
-        <span v-if="recordingStatus.recordingId" class="status-recording"
-          >⏺ Recording</span
-        >
-        <span v-if="recordingStatus.activeId" class="status-playback"
-          >▶ Playback</span
-        >
-        <span v-if="analysisStatus.runId" class="status-analysis">◎ Analysis</span>
-      </div>
-      <div class="toolbar-actions" v-if="tab === 'requests'">
+      <div class="toolbar-actions">
         <button @click="handleClear">Clear</button>
         <button @click="loadSessions">Reload</button>
       </div>
+      <span class="session-count">{{ sessions.length }} requests</span>
     </div>
 
-    <div class="main" v-if="tab === 'requests'">
-      <SessionList
-        :sessions="sessions"
-        :selected-ids="selectedIds"
-        @select="selectSessions"
-        @copy-url="handleCopyUrl"
-        @replay="handleReplay"
-        @add-auto-response="handleAddAutoResponse"
-        @delete-selected="handleDeleteSelected"
-      />
+    <div class="main">
+      <div class="list-pane" :style="{ width: listWidth + 'px' }">
+        <SessionList
+          :sessions="sessions"
+          :selected-ids="selectedIds"
+          @select="selectSessions"
+          @replay="handleReplay"
+          @delete-selected="handleDeleteSelected"
+        />
+      </div>
+      <div class="divider" @mousedown.prevent="startDrag" />
 
       <SessionDetail
         v-if="selectedSession"
         :session="selectedSession"
-        @add-auto-response="handleAddAutoResponse"
+        @open-viewer="openViewer"
       />
       <div v-else class="detail-placeholder">
         {{
@@ -147,24 +129,18 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="main" v-else-if="tab === 'autoresponder'">
-      <AutoResponder :prefill-session="sessionToPrefill" @prefilled="sessionToPrefill = null" />
-    </div>
-
-    <div class="main" v-else-if="tab === 'analysis'">
-      <Analysis />
-    </div>
-
-    <div class="main" v-else>
-      <Recordings />
-    </div>
-
     <div class="status-bar">
       <span :class="{ disconnected: !connected }">
         {{ connected ? "● Connected" : "✕ Disconnected" }}
       </span>
-      <span>{{ sessions.length }} requests</span>
     </div>
+
+    <SessionViewer
+      v-if="viewerSession"
+      :session="viewerSession"
+      :initial-tab="viewerTab"
+      @close="closeViewer"
+    />
   </div>
 </template>
 
@@ -229,62 +205,18 @@ header small {
   border-bottom: 1px solid #3e3e42;
   padding: 6px 16px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-}
-.tabs {
-  display: flex;
-  gap: 0;
-}
-.tabs button {
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: #858585;
-  padding: 4px 14px;
-  font-size: 12px;
-  cursor: pointer;
-}
-.tabs button:hover {
-  color: #d4d4d4;
-}
-.tabs button.active {
-  color: #d4d4d4;
-  border-bottom-color: #007acc;
 }
 .toolbar-actions {
   display: flex;
   gap: 8px;
 }
-.toolbar-status {
-  display: flex;
-  gap: 12px;
-  align-items: center;
+.session-count {
   margin-left: auto;
-}
-.status-recording {
-  color: #f48771;
-  font-size: 11px;
-  animation: pulse 1.5s ease-in-out infinite;
-}
-.status-playback {
-  color: #4ec9b0;
-  font-size: 11px;
-}
-.status-analysis {
-  color: #dcdcaa;
-  font-size: 11px;
-}
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
+  color: #858585;
+  font-size: 12px;
 }
 
 .main {
@@ -293,23 +225,43 @@ header small {
   overflow: hidden;
 }
 
+.list-pane {
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.divider {
+  width: 4px;
+  flex-shrink: 0;
+  background: #3e3e42;
+  cursor: col-resize;
+  transition: background 0.15s;
+}
+.divider:hover {
+  background: #569cd6;
+}
+
 .detail-placeholder {
-  width: 50%;
+  flex: 1;
   color: #555;
   padding: 40px;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .status-bar {
   background: #007acc;
   color: white;
-  padding: 3px 12px;
+  padding: 2px 16px;
   font-size: 11px;
   display: flex;
-  gap: 20px;
+  gap: 16px;
   flex-shrink: 0;
 }
-.disconnected {
-  color: #ffcccc;
+.status-bar .disconnected {
+  color: #ffcc00;
 }
 </style>
