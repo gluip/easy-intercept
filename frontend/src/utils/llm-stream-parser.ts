@@ -94,7 +94,7 @@ export function parseAnthropicStream(body: string): Record<string, unknown> {
   let id = "";
 
   // Track blocks by index
-  const blocks: Record<number, { type: string; data: Record<string, unknown> }> = {};
+  const blocks: Record<number, { type: string; data: any }> = {};
 
   for (const { event, data } of events) {
     if (event === "message_start") {
@@ -115,7 +115,7 @@ export function parseAnthropicStream(body: string): Record<string, unknown> {
     }
     if (event === "content_block_delta") {
       const idx = data.index as number;
-      const delta = data.delta as Record<string, unknown> | undefined;
+      const delta = data.delta as any;
       if (!delta || !blocks[idx]) continue;
       const block = blocks[idx];
       if (delta.type === "text_delta") {

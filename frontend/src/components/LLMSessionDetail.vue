@@ -143,7 +143,7 @@ function parseOpenAIMessages(
 const parsed = computed((): ParsedLLM | null => {
   try {
     const req = JSON.parse(props.session.requestBody);
-    let res: Record<string, unknown>;
+    let res: any;
 
     // If response is streaming SSE, parse it first
     if (isStreamingResponse(props.session.responseBody)) {
