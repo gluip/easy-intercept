@@ -24,7 +24,7 @@ builder.Services.AddHttpClient("replay").ConfigurePrimaryHttpMessageHandler(() =
     {
         AllowAutoRedirect = false,
         UseCookies = false,
-        Proxy = new System.Net.WebProxy("http://localhost:8888"),
+        Proxy = new System.Net.WebProxy("http://localhost:9999"),
         UseProxy = true,
     });
 
@@ -125,7 +125,7 @@ app.MapGet("/install", async (HttpContext ctx) =>
         </head>
         <body>
           <h1>Install EasyIntercept CA Certificate</h1>
-          <p>Proxy address: <code>{{ctx.Request.Host.Host}}:8888</code></p>
+          <p>Proxy address: <code>{{ctx.Request.Host.Host}}:9999</code></p>
           <div id="qr" class="qr"></div>
           <script>new QRCode(document.getElementById("qr"), { text: "{{caUrl}}", width: 200, height: 200 });</script>
           <a class="btn" href="/ca">Download &amp; Install Certificate</a>
@@ -136,7 +136,7 @@ app.MapGet("/install", async (HttpContext ctx) =>
             <li>Tap the <em>EasyIntercept</em> profile → <em>Install</em></li>
             <li>Go to <strong>Settings → General → About → Certificate Trust Settings</strong></li>
             <li>Enable full trust for <em>EasyIntercept CA</em></li>
-            <li>Set proxy to <code>{{ctx.Request.Host.Host}}:8888</code> under Wi-Fi settings</li>
+            <li>Set proxy to <code>{{ctx.Request.Host.Host}}:9999</code> under Wi-Fi settings</li>
           </ol>
         </body>
         </html>

@@ -2,7 +2,7 @@
 # Sample REST API requests via EasyIntercept proxy
 # Usage: ./samples.sh
 
-PROXY="http://localhost:8888"
+PROXY="http://localhost:9999"
 
 echo "=== EasyIntercept sample requests ==="
 echo ""

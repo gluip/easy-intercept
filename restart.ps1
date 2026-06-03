@@ -5,7 +5,7 @@ $PROJECT = "d:\git\easy-intercept\EasyIntercept\EasyIntercept.csproj"
 
 Write-Host "Killing existing processes..." -ForegroundColor Cyan
 Get-Process | Where-Object { $_.ProcessName -eq "dotnet" -and $_.Path -like "*EasyIntercept*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-Get-NetTCPConnection -LocalPort 8080,8888 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+Get-NetTCPConnection -LocalPort 8080,9999 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Seconds 1
 
 Write-Host "Building frontend..." -ForegroundColor Cyan

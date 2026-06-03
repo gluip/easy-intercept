@@ -35,10 +35,10 @@ public class ProxyServer : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var listener = new TcpListener(IPAddress.Any, 8888);
+        var listener = new TcpListener(IPAddress.Any, 9999);
         listener.Start();
 
-        _logger.LogInformation("EasyIntercept proxy  →  http://localhost:8888");
+        _logger.LogInformation("EasyIntercept proxy  →  http://localhost:9999");
         _logger.LogInformation("EasyIntercept web UI →  http://localhost:8080");
 
         while (!stoppingToken.IsCancellationRequested)

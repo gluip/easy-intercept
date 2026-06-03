@@ -29,7 +29,7 @@ Write-Host ""
 Write-Host "CA geinstalleerd en vertrouwd!" -ForegroundColor Green
 Write-Host ""
 Write-Host "Test met:"
-Write-Host "  curl -x http://localhost:8888 https://httpbin.org/get"
+Write-Host "  curl -x http://localhost:9999 https://httpbin.org/get"
 Write-Host ""
 Write-Host "Verwijderen:"
 Write-Host '  Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like "*EasyIntercept Root CA*" } | Remove-Item'

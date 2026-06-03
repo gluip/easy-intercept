@@ -520,7 +520,7 @@ function convColor(s: ProxySession): string | null {
       </template>
       <template v-else>
         No requests yet.<br />
-        Configure your browser/app to use proxy <strong>localhost:8888</strong>
+        Configure your browser/app to use proxy <strong>localhost:9999</strong>
       </template>
     </div>
 

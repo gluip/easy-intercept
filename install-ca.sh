@@ -19,7 +19,7 @@ sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keyc
 echo "✅ CA geïnstalleerd en vertrouwd!"
 echo ""
 echo "Test met:"
-echo "  curl -x http://localhost:8888 https://httpbin.org/get"
+echo "  curl -x http://localhost:9999 https://httpbin.org/get"
 echo ""
 echo "Verwijderen:"
 echo "  sudo security delete-certificate -c \"$CN\" /Library/Keychains/System.keychain"

@@ -116,7 +116,7 @@ onMounted(async () => {
   <div class="app">
     <header>
       <h1>EasyIntercept</h1>
-      <small>proxy → localhost:8888 &nbsp;|&nbsp; ui → localhost:8080</small>
+      <small>proxy → localhost:9999 &nbsp;|&nbsp; ui → localhost:8080</small>
     </header>
 
     <div class="toolbar" v-show="activeTab === 'requests'">

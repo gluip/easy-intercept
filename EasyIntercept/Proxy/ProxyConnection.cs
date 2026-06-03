@@ -287,8 +287,9 @@ public class ProxyConnection
             sb.Append($"HTTP/1.1 {(int)upstream.StatusCode} {upstream.ReasonPhrase}\r\n");
             foreach (var (key, val) in respHeaders)
             {
-                if (key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase)) continue;
+                if (HopByHopHeaders.Contains(key)) continue;
                 if (key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)) continue;
+                if (key.Equals("Content-Encoding", StringComparison.OrdinalIgnoreCase)) continue;
                 sb.Append($"{key}: {val}\r\n");
             }
             sb.Append($"Content-Length: {respBody.Length}\r\n");

@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 set -e
 
-PROXY="http://localhost:8888"
+PROXY="http://localhost:9999"
 API="http://localhost:8080"
 PASS=0
 FAIL=0
