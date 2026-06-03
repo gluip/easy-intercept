@@ -10,3 +10,14 @@ export interface ProxySession {
   responseBody: string;
   durationMs: number;
 }
+
+export interface AutoResponderRule {
+  id: string;
+  name: string;
+  isEnabled: boolean;
+  method: string;
+  url: string;
+  responseStatus: number;
+  responseHeaders: Record<string, string>;
+  responseBody: string;
+}

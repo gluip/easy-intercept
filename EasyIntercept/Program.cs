@@ -1,3 +1,4 @@
+using EasyIntercept.AutoResponder;
 using EasyIntercept.Certificates;
 using EasyIntercept.Hubs;
 using EasyIntercept.Proxy;
@@ -29,6 +30,7 @@ builder.Services.AddHttpClient("replay").ConfigurePrimaryHttpMessageHandler(() =
 
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<CertificateService>();
+builder.Services.AddSingleton<AutoResponderStore>();
 builder.Services.AddHostedService<ProxyServer>();
 
 var app = builder.Build();
@@ -73,6 +75,24 @@ app.MapPost("/api/sessions/{id:guid}/replay", async (Guid id, SessionStore store
     var body = await resp.Content.ReadAsStringAsync();
     return Results.Ok(new { status = (int)resp.StatusCode, body });
 });
+
+app.MapGet("/api/auto-responders", (AutoResponderStore store) =>
+    Results.Ok(store.GetAll()));
+
+app.MapPost("/api/auto-responders", (AutoResponderRule rule, AutoResponderStore store) =>
+{
+    store.Add(rule);
+    return Results.Ok(rule);
+});
+
+app.MapPut("/api/auto-responders/{id:guid}", (Guid id, AutoResponderRule rule, AutoResponderStore store) =>
+{
+    if (rule.Id != id) return Results.BadRequest("Id mismatch");
+    return store.Update(id, rule) ? Results.Ok(rule) : Results.NotFound();
+});
+
+app.MapDelete("/api/auto-responders/{id:guid}", (Guid id, AutoResponderStore store) =>
+    store.Remove(id) ? Results.Ok() : Results.NotFound());
 
 app.MapGet("/ca", (CertificateService certs) =>
 {

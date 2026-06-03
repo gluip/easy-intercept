@@ -1,10 +1,13 @@
 import { ref, readonly } from "vue";
 import { HubConnectionBuilder, HubConnectionState } from "@microsoft/signalr";
-import type { ProxySession } from "../types";
+import type { ProxySession, AutoResponderRule } from "../types";
 
 const sessions = ref<ProxySession[]>([]);
 const connected = ref(false);
 const pendingSession = ref<ProxySession | null>(null);
+
+const autoResponderRules = ref<AutoResponderRule[]>([]);
+const pendingRule = ref<AutoResponderRule | null>(null);
 
 const connection = new HubConnectionBuilder()
   .withUrl("/proxy-hub")
@@ -49,6 +52,41 @@ async function deleteSessions(ids: string[]) {
   sessions.value = sessions.value.filter((s) => !ids.includes(s.id));
 }
 
+async function loadRules() {
+  const r = await fetch("/api/auto-responders");
+  autoResponderRules.value = await r.json();
+}
+
+async function addRule(rule: AutoResponderRule) {
+  await fetch("/api/auto-responders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rule),
+  });
+  autoResponderRules.value.push(rule);
+}
+
+async function updateRule(rule: AutoResponderRule) {
+  await fetch(`/api/auto-responders/${rule.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rule),
+  });
+  const idx = autoResponderRules.value.findIndex((r) => r.id === rule.id);
+  if (idx >= 0) autoResponderRules.value[idx] = rule;
+}
+
+async function deleteRule(id: string) {
+  await fetch(`/api/auto-responders/${id}`, { method: "DELETE" });
+  autoResponderRules.value = autoResponderRules.value.filter((r) => r.id !== id);
+}
+
+async function toggleRule(id: string) {
+  const rule = autoResponderRules.value.find((r) => r.id === id);
+  if (!rule) return;
+  await updateRule({ ...rule, isEnabled: !rule.isEnabled });
+}
+
 export function useProxy() {
   return {
     sessions: readonly(sessions),
@@ -59,5 +97,12 @@ export function useProxy() {
     clearSessions,
     replaySession,
     deleteSessions,
+    autoResponderRules: readonly(autoResponderRules),
+    pendingRule,
+    loadRules,
+    addRule,
+    updateRule,
+    deleteRule,
+    toggleRule,
   };
 }
