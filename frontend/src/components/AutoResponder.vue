@@ -1,6 +1,53 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import type { AutoResponderRule } from "../types";
+import CodeEditor from "./CodeEditor.vue";
+
+function detectLanguage(rule: AutoResponderRule): "xml" | "json" | "text" {
+  const ct = Object.entries(rule.responseHeaders).find(
+    ([k]) => k.toLowerCase() === "content-type",
+  )?.[1] ?? "";
+  if (ct.includes("xml")) return "xml";
+  if (ct.includes("json")) return "json";
+  const body = rule.responseBody.trimStart();
+  if (body.startsWith("<?xml") || (body.startsWith("<") && !body.startsWith("<!"))) return "xml";
+  if (body.startsWith("{") || body.startsWith("[")) return "json";
+  return "text";
+}
+
+function formatXml(xml: string): string {
+  try {
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    if (doc.querySelector("parsererror")) return xml;
+    return serializeXml(doc.documentElement, 0);
+  } catch {
+    return xml;
+  }
+}
+
+function serializeXml(node: Element, depth: number): string {
+  const indent = "  ".repeat(depth);
+  const children = Array.from(node.childNodes);
+  const hasElementChildren = children.some((c) => c.nodeType === Node.ELEMENT_NODE);
+
+  const attrs = Array.from(node.attributes)
+    .map((a) => ` ${a.name}="${a.value}"`)
+    .join("");
+
+  if (children.length === 0) return `${indent}<${node.tagName}${attrs} />`;
+
+  if (!hasElementChildren) {
+    const text = node.textContent ?? "";
+    return `${indent}<${node.tagName}${attrs}>${text}</${node.tagName}>`;
+  }
+
+  const inner = children
+    .filter((c) => c.nodeType === Node.ELEMENT_NODE)
+    .map((c) => serializeXml(c as Element, depth + 1))
+    .join("\n");
+
+  return `${indent}<${node.tagName}${attrs}>\n${inner}\n${indent}</${node.tagName}>`;
+}
 
 const props = defineProps<{
   rules: readonly AutoResponderRule[];
@@ -66,6 +113,32 @@ function startEdit(rule: AutoResponderRule) {
   editingRule.value = { ...rule, responseHeaders: { ...rule.responseHeaders } };
   isNew.value = false;
 }
+
+const bodyLanguage = computed(() =>
+  editingRule.value ? detectLanguage(editingRule.value) : "text",
+);
+
+function autoFormat() {
+  if (!editingRule.value) return;
+  if (bodyLanguage.value === "xml") {
+    editingRule.value.responseBody = formatXml(editingRule.value.responseBody);
+  } else if (bodyLanguage.value === "json") {
+    try {
+      editingRule.value.responseBody = JSON.stringify(
+        JSON.parse(editingRule.value.responseBody),
+        null,
+        2,
+      );
+    } catch {}
+  }
+}
+
+// Auto-format when loading a rule with structured content
+watch(editingRule, (rule) => {
+  if (rule && (detectLanguage(rule) === "xml" || detectLanguage(rule) === "json")) {
+    autoFormat();
+  }
+});
 
 function cancelEdit() {
   editingRule.value = null;
@@ -157,8 +230,24 @@ function saveRule() {
         <label>Response Headers (one per line: Key: Value)</label>
         <textarea v-model="headersText" class="field mono" rows="4" />
 
-        <label>Response Body</label>
-        <textarea v-model="editingRule.responseBody" class="field mono body-field" rows="12" />
+        <div class="body-label-row">
+          <label>Response Body</label>
+          <span v-if="bodyLanguage !== 'text'" class="lang-badge">{{ bodyLanguage.toUpperCase() }}</span>
+          <button class="fmt-btn" @click="autoFormat" title="Auto-format">⇌ Format</button>
+        </div>
+        <div class="body-editor-wrap">
+          <CodeEditor
+            v-if="bodyLanguage !== 'text'"
+            v-model="editingRule.responseBody"
+            :language="bodyLanguage"
+          />
+          <textarea
+            v-else
+            v-model="editingRule.responseBody"
+            class="field mono body-field"
+            rows="12"
+          />
+        </div>
 
         <div class="editor-actions">
           <button class="save-btn" @click="saveRule">
@@ -277,6 +366,7 @@ function saveRule() {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
 }
 
 .editor-header {
@@ -321,6 +411,44 @@ label {
 
 .body-field {
   resize: vertical;
+}
+
+.body-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lang-badge {
+  font-size: 10px;
+  color: #4ec9b0;
+  background: #1e3a2f;
+  padding: 1px 5px;
+  border-radius: 8px;
+  letter-spacing: 0.05em;
+}
+
+.fmt-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid #3e3e42;
+  color: #858585;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  border-radius: 3px;
+}
+.fmt-btn:hover {
+  color: #d4d4d4;
+  border-color: #569cd6;
+}
+
+.body-editor-wrap {
+  flex: 1;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
 }
 
 .row {

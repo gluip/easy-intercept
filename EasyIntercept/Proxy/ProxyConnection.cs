@@ -199,8 +199,12 @@ public class ProxyConnection
             var sb = new StringBuilder();
             sb.Append($"HTTP/1.1 {match.ResponseStatus} {reason}\r\n");
             foreach (var (key, val) in match.ResponseHeaders)
-                if (!key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
-                    sb.Append($"{key}: {val}\r\n");
+            {
+                if (HopByHopHeaders.Contains(key)) continue;
+                if (key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)) continue;
+                if (key.Equals("Content-Encoding", StringComparison.OrdinalIgnoreCase)) continue;
+                sb.Append($"{key}: {val}\r\n");
+            }
             sb.Append($"Content-Length: {bodyBytes.Length}\r\n");
             sb.Append("X-EasyIntercept-AutoResponder: true\r\n");
             sb.Append("Connection: close\r\n\r\n");
