@@ -4,6 +4,7 @@ import type { ProxySession } from "../types";
 import ContextMenu from "./ContextMenu.vue";
 import { detectLLMProvider } from "../utils/llm-detection";
 import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream } from "../utils/llm-stream-parser";
+import { isElasticsearchRequest, detectESOperation, parseESIndex } from "../utils/es-detection";
 
 const props = defineProps<{
   sessions: readonly ProxySession[];
@@ -424,6 +425,27 @@ function convColor(s: ProxySession): string | null {
   if (!fp) return null;
   return conversationColorMap.value.get(fp) ?? null;
 }
+
+function esPreview(s: ProxySession): string | null {
+  if (!isElasticsearchRequest(s)) return null;
+  const op = detectESOperation(s);
+  const idx = parseESIndex(s.url);
+  try {
+    const resp = JSON.parse(s.responseBody);
+    if (op === "search") {
+      const total = resp?.hits?.total?.value;
+      const took = resp?.took;
+      const parts = [idx || "_search"];
+      if (total !== undefined) parts.push(`${total} hits`);
+      if (took !== undefined) parts.push(`${took}ms`);
+      return parts.join("  ·  ");
+    }
+    if (op === "pit-create") return `pit  ·  ${idx || "create"}`;
+    if (op === "pit-delete") return `pit delete  ·  freed ${resp?.num_freed ?? "?"}`;
+    if (op === "bulk") return `bulk  ·  ${idx}`;
+  } catch { /* fall through */ }
+  return idx ? `${op}  ·  ${idx}` : null;
+}
 </script>
 
 <template>
@@ -492,6 +514,7 @@ function convColor(s: ProxySession): string | null {
               >⚡</span
             >
             <span v-if="llmPreview(s)" class="llm-preview">{{ llmPreview(s) }}</span>
+            <span v-else-if="esPreview(s)" class="es-preview">{{ esPreview(s) }}</span>
             <span v-else>{{ s.url }}</span>
           </td>
           <td class="col-tools">
@@ -704,6 +727,11 @@ td {
 
 .llm-preview {
   color: #ce9178;
+  font-style: italic;
+}
+
+.es-preview {
+  color: #4ec9b0;
   font-style: italic;
 }
 
