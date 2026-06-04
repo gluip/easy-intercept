@@ -2,7 +2,9 @@
 import { computed } from "vue";
 import type { ProxySession } from "../types";
 import { isLLMRequest } from "../utils/llm-detection";
+import { isElasticsearchRequest } from "../utils/es-detection";
 import LLMSessionDetail from "./LLMSessionDetail.vue";
+import ElasticsearchSessionDetail from "./ElasticsearchSessionDetail.vue";
 
 const props = defineProps<{
   session: ProxySession;
@@ -14,6 +16,7 @@ const emit = defineEmits<{
 }>();
 
 const isLLM = computed(() => isLLMRequest(props.session));
+const isES = computed(() => !isLLM.value && isElasticsearchRequest(props.session));
 
 function formatJson(obj: unknown): string {
   try {
@@ -171,6 +174,12 @@ function formatBodyHtml(body: string): string {
       v-if="isLLM"
       :session="session"
       @open-viewer="(s, t) => emit('openViewer', s, t)"
+    />
+
+    <!-- Elasticsearch viewer -->
+    <ElasticsearchSessionDetail
+      v-else-if="isES"
+      :session="session"
     />
 
     <!-- Standard request viewer -->

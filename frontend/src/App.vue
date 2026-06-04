@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
-import type { ProxySession } from "./types";
+import type { ProxySession, AutoResponderRule } from "./types";
 import { useProxy } from "./composables/useProxy";
 import SessionList from "./components/SessionList.vue";
 import SessionDetail from "./components/SessionDetail.vue";
 import SessionViewer from "./components/SessionViewer.vue";
+import AutoResponder from "./components/AutoResponder.vue";
 
 const {
   sessions,
@@ -15,10 +16,18 @@ const {
   clearSessions,
   replaySession,
   deleteSessions,
+  autoResponderRules,
+  pendingRule,
+  loadRules,
+  addRule,
+  updateRule,
+  deleteRule,
+  toggleRule,
 } = useProxy();
 
 const selectedIds = ref<string[]>([]);
-const listWidth = ref(600);;
+const listWidth = ref(600);
+const activeTab = ref<"requests" | "auto-responder">("requests");
 
 const selectedSession = computed(() =>
   selectedIds.value.length === 1
@@ -77,6 +86,31 @@ function startDrag(e: MouseEvent) {
   document.addEventListener("mouseup", onUp);
 }
 
+const HOP_BY_HOP = new Set([
+  "connection", "keep-alive", "transfer-encoding", "te", "trailers",
+  "upgrade", "proxy-authenticate", "proxy-authorization", "proxy-connection",
+  "content-encoding",
+]);
+
+function handleAddAutoResponse(session: ProxySession) {
+  const cleanHeaders = Object.fromEntries(
+    Object.entries(session.responseHeaders).filter(
+      ([k]) => !HOP_BY_HOP.has(k.toLowerCase()),
+    ),
+  );
+  pendingRule.value = {
+    id: crypto.randomUUID(),
+    name: `${session.method} ${new URL(session.url).pathname}`,
+    isEnabled: true,
+    method: session.method,
+    url: session.url,
+    responseStatus: session.responseStatus,
+    responseHeaders: cleanHeaders,
+    responseBody: session.responseBody,
+  } as AutoResponderRule;
+  activeTab.value = "auto-responder";
+}
+
 onMounted(async () => {
   listWidth.value = Math.round(window.innerWidth * 0.5);
   try {
@@ -85,6 +119,7 @@ onMounted(async () => {
     console.error("SignalR connect failed:", e);
   }
   await loadSessions();
+  await loadRules();
 });
 </script>
 
@@ -92,10 +127,28 @@ onMounted(async () => {
   <div class="app">
     <header>
       <h1>EasyIntercept</h1>
-      <small>proxy → localhost:8888 &nbsp;|&nbsp; ui → localhost:8080</small>
+      <small>proxy → localhost:9999 &nbsp;|&nbsp; ui → localhost:8080</small>
     </header>
 
-    <div class="toolbar">
+    <div class="tab-bar">
+      <button
+        :class="['tab', { active: activeTab === 'requests' }]"
+        @click="activeTab = 'requests'"
+      >
+        Requests
+      </button>
+      <button
+        :class="['tab', { active: activeTab === 'auto-responder' }]"
+        @click="activeTab = 'auto-responder'"
+      >
+        ⚡ Auto Responder
+        <span v-if="autoResponderRules.length > 0" class="rule-count">
+          {{ autoResponderRules.filter((r) => r.isEnabled).length }}/{{ autoResponderRules.length }}
+        </span>
+      </button>
+    </div>
+
+    <div class="toolbar" v-show="activeTab === 'requests'">
       <div class="toolbar-actions">
         <button @click="handleClear">Clear</button>
         <button @click="loadSessions">Reload</button>
@@ -103,7 +156,7 @@ onMounted(async () => {
       <span class="session-count">{{ sessions.length }} requests</span>
     </div>
 
-    <div class="main">
+    <div class="main" v-show="activeTab === 'requests'">
       <div class="list-pane" :style="{ width: listWidth + 'px' }">
         <SessionList
           :sessions="sessions"
@@ -119,6 +172,7 @@ onMounted(async () => {
         v-if="selectedSession"
         :session="selectedSession"
         @open-viewer="openViewer"
+        @add-auto-response="handleAddAutoResponse"
       />
       <div v-else class="detail-placeholder">
         {{
@@ -128,6 +182,17 @@ onMounted(async () => {
         }}
       </div>
     </div>
+
+    <AutoResponder
+      v-if="activeTab === 'auto-responder'"
+      :rules="autoResponderRules"
+      :pending-rule="pendingRule"
+      @add="addRule"
+      @update="updateRule"
+      @delete="deleteRule"
+      @toggle="toggleRule"
+      @pending-consumed="pendingRule = null"
+    />
 
     <div class="status-bar">
       <span :class="{ disconnected: !connected }">
@@ -250,6 +315,45 @@ header small {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.tab-bar {
+  background: #252526;
+  border-bottom: 1px solid #3e3e42;
+  display: flex;
+  gap: 0;
+  flex-shrink: 0;
+  padding: 0 8px;
+}
+
+.tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #858585;
+  cursor: pointer;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tab:hover {
+  color: #d4d4d4;
+  background: #2d2d30;
+}
+.tab.active {
+  color: #d4d4d4;
+  border-bottom-color: #007acc;
+}
+
+.rule-count {
+  font-size: 10px;
+  color: #4ec9b0;
+  background: #1e3a2f;
+  padding: 1px 5px;
+  border-radius: 8px;
 }
 
 .status-bar {

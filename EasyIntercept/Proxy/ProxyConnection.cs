@@ -4,6 +4,7 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using EasyIntercept.AutoResponder;
 using EasyIntercept.Certificates;
 using EasyIntercept.Hubs;
 using EasyIntercept.Models;
@@ -25,19 +26,22 @@ public class ProxyConnection
     private readonly IHubContext<ProxyHub> _hub;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly CertificateService _certs;
+    private readonly AutoResponderStore _autoResponder;
 
     public ProxyConnection(
         TcpClient client,
         SessionStore sessions,
         IHubContext<ProxyHub> hub,
         IHttpClientFactory httpClientFactory,
-        CertificateService certs)
+        CertificateService certs,
+        AutoResponderStore autoResponder)
     {
         _client = client;
         _sessions = sessions;
         _hub = hub;
         _httpClientFactory = httpClientFactory;
         _certs = certs;
+        _autoResponder = autoResponder;
     }
 
     public async Task HandleAsync()
@@ -179,6 +183,60 @@ public class ProxyConnection
         var (actualBody, _) = DecompressRequestBodyIfNeeded(reqBody, reqHeaders);
         var isReqText = reqHeaders.TryGetValue("Content-Type", out var reqCt) && IsTextContentType(reqCt);
 
+        // Auto-responder check — runs before any upstream request
+        var match = _autoResponder.FindMatch(method, url);
+        if (match is not null)
+        {
+            var bodyBytes = Encoding.UTF8.GetBytes(match.ResponseBody);
+            var reason = match.ResponseStatus switch
+            {
+                200 => "OK", 201 => "Created", 204 => "No Content",
+                400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden",
+                404 => "Not Found", 500 => "Internal Server Error",
+                _ => "OK"
+            };
+
+            var sb = new StringBuilder();
+            sb.Append($"HTTP/1.1 {match.ResponseStatus} {reason}\r\n");
+            foreach (var (key, val) in match.ResponseHeaders)
+            {
+                if (HopByHopHeaders.Contains(key)) continue;
+                if (key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)) continue;
+                if (key.Equals("Content-Encoding", StringComparison.OrdinalIgnoreCase)) continue;
+                sb.Append($"{key}: {val}\r\n");
+            }
+            sb.Append($"Content-Length: {bodyBytes.Length}\r\n");
+            sb.Append("X-EasyIntercept-AutoResponder: true\r\n");
+            sb.Append("Connection: close\r\n\r\n");
+
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(sb.ToString()));
+            await stream.WriteAsync(bodyBytes);
+
+            var fakeRespHeaders = new Dictionary<string, string>(match.ResponseHeaders, StringComparer.OrdinalIgnoreCase)
+            {
+                ["X-EasyIntercept-AutoResponder"] = "true",
+                ["Content-Length"] = bodyBytes.Length.ToString()
+            };
+
+            var session = new ProxySession
+            {
+                Method = method,
+                Url = url,
+                RequestHeaders = reqHeaders,
+                RequestBody = (actualBody.Length > 0 && isReqText)
+                    ? Encoding.UTF8.GetString(actualBody)
+                    : (actualBody.Length > 0 ? $"[{actualBody.Length} bytes binary]" : ""),
+                ResponseStatus = match.ResponseStatus,
+                ResponseHeaders = fakeRespHeaders,
+                ResponseBody = match.ResponseBody,
+                DurationMs = 0,
+            };
+
+            _sessions.Add(session);
+            await _hub.Clients.All.SendAsync("NewSession", session);
+            return;
+        }
+
         // Build upstream request
         var httpClient = _httpClientFactory.CreateClient("proxy");
         var req = new HttpRequestMessage(new HttpMethod(method), url);
@@ -233,8 +291,9 @@ public class ProxyConnection
             sb.Append($"HTTP/1.1 {(int)upstream.StatusCode} {upstream.ReasonPhrase}\r\n");
             foreach (var (key, val) in respHeaders)
             {
-                if (key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase)) continue;
+                if (HopByHopHeaders.Contains(key)) continue;
                 if (key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)) continue;
+                if (key.Equals("Content-Encoding", StringComparison.OrdinalIgnoreCase)) continue;
                 sb.Append($"{key}: {val}\r\n");
             }
             sb.Append($"Content-Length: {respBody.Length}\r\n");
@@ -249,15 +308,21 @@ public class ProxyConnection
                 || (respHeaders.TryGetValue("Content-Type", out var rct)
                     && (rct.Contains("text/") || rct.Contains("json") || rct.Contains("xml") || rct.Contains("javascript")));
 
+            var sessionHeaders = respHeaders
+                .Where(h => !h.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase)
+                         && !h.Key.Equals("Content-Encoding", StringComparison.OrdinalIgnoreCase))
+                .ToDictionary(h => h.Key, h => h.Value, StringComparer.OrdinalIgnoreCase);
+            sessionHeaders["Content-Length"] = respBody.Length.ToString();
+
             var session = new ProxySession
             {
                 Method = method,
                 Url = url,
                 RequestHeaders = reqHeaders,
-                RequestBody = (actualBody.Length > 0 && isReqText) ? Encoding.UTF8.GetString(actualBody) 
+                RequestBody = (actualBody.Length > 0 && isReqText) ? Encoding.UTF8.GetString(actualBody)
                     : (actualBody.Length > 0 ? $"[{actualBody.Length} bytes binary]" : ""),
                 ResponseStatus = (int)upstream.StatusCode,
-                ResponseHeaders = respHeaders,
+                ResponseHeaders = sessionHeaders,
                 ResponseBody = isText ? Encoding.UTF8.GetString(respBody) : $"[{respBody.Length} bytes]",
                 DurationMs = sw.ElapsedMilliseconds,
             };
