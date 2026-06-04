@@ -308,15 +308,21 @@ public class ProxyConnection
                 || (respHeaders.TryGetValue("Content-Type", out var rct)
                     && (rct.Contains("text/") || rct.Contains("json") || rct.Contains("xml") || rct.Contains("javascript")));
 
+            var sessionHeaders = respHeaders
+                .Where(h => !h.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase)
+                         && !h.Key.Equals("Content-Encoding", StringComparison.OrdinalIgnoreCase))
+                .ToDictionary(h => h.Key, h => h.Value, StringComparer.OrdinalIgnoreCase);
+            sessionHeaders["Content-Length"] = respBody.Length.ToString();
+
             var session = new ProxySession
             {
                 Method = method,
                 Url = url,
                 RequestHeaders = reqHeaders,
-                RequestBody = (actualBody.Length > 0 && isReqText) ? Encoding.UTF8.GetString(actualBody) 
+                RequestBody = (actualBody.Length > 0 && isReqText) ? Encoding.UTF8.GetString(actualBody)
                     : (actualBody.Length > 0 ? $"[{actualBody.Length} bytes binary]" : ""),
                 ResponseStatus = (int)upstream.StatusCode,
-                ResponseHeaders = respHeaders,
+                ResponseHeaders = sessionHeaders,
                 ResponseBody = isText ? Encoding.UTF8.GetString(respBody) : $"[{respBody.Length} bytes]",
                 DurationMs = sw.ElapsedMilliseconds,
             };

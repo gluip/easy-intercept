@@ -86,7 +86,18 @@ function startDrag(e: MouseEvent) {
   document.addEventListener("mouseup", onUp);
 }
 
+const HOP_BY_HOP = new Set([
+  "connection", "keep-alive", "transfer-encoding", "te", "trailers",
+  "upgrade", "proxy-authenticate", "proxy-authorization", "proxy-connection",
+  "content-encoding",
+]);
+
 function handleAddAutoResponse(session: ProxySession) {
+  const cleanHeaders = Object.fromEntries(
+    Object.entries(session.responseHeaders).filter(
+      ([k]) => !HOP_BY_HOP.has(k.toLowerCase()),
+    ),
+  );
   pendingRule.value = {
     id: crypto.randomUUID(),
     name: `${session.method} ${new URL(session.url).pathname}`,
@@ -94,7 +105,7 @@ function handleAddAutoResponse(session: ProxySession) {
     method: session.method,
     url: session.url,
     responseStatus: session.responseStatus,
-    responseHeaders: { ...session.responseHeaders },
+    responseHeaders: cleanHeaders,
     responseBody: session.responseBody,
   } as AutoResponderRule;
   activeTab.value = "auto-responder";
@@ -119,14 +130,6 @@ onMounted(async () => {
       <small>proxy → localhost:9999 &nbsp;|&nbsp; ui → localhost:8080</small>
     </header>
 
-    <div class="toolbar" v-show="activeTab === 'requests'">
-      <div class="toolbar-actions">
-        <button @click="handleClear">Clear</button>
-        <button @click="loadSessions">Reload</button>
-      </div>
-      <span class="session-count">{{ sessions.length }} requests</span>
-    </div>
-
     <div class="tab-bar">
       <button
         :class="['tab', { active: activeTab === 'requests' }]"
@@ -143,6 +146,14 @@ onMounted(async () => {
           {{ autoResponderRules.filter((r) => r.isEnabled).length }}/{{ autoResponderRules.length }}
         </span>
       </button>
+    </div>
+
+    <div class="toolbar" v-show="activeTab === 'requests'">
+      <div class="toolbar-actions">
+        <button @click="handleClear">Clear</button>
+        <button @click="loadSessions">Reload</button>
+      </div>
+      <span class="session-count">{{ sessions.length }} requests</span>
     </div>
 
     <div class="main" v-show="activeTab === 'requests'">
