@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import type { ProxySession } from "../types";
 import { detectESOperation, parseESIndex, parseFilters } from "../utils/es-detection";
+import SessionHeaders from "./SessionHeaders.vue";
 
 const props = defineProps<{ session: ProxySession }>();
 
@@ -57,13 +58,6 @@ function sourceEntries(source: Record<string, unknown>): [string, string][] {
   ]);
 }
 
-function formatJson(obj: unknown): string {
-  try {
-    return JSON.stringify(obj, null, 2);
-  } catch {
-    return String(obj);
-  }
-}
 </script>
 
 <template>
@@ -181,14 +175,8 @@ function formatJson(obj: unknown): string {
 
     <!-- Headers (collapsed by default) -->
     <div class="section">
-      <details class="headers-details">
-        <summary>Request Headers</summary>
-        <pre>{{ formatJson(session.requestHeaders) }}</pre>
-      </details>
-      <details class="headers-details">
-        <summary>Response Headers</summary>
-        <pre>{{ formatJson(session.responseHeaders) }}</pre>
-      </details>
+      <SessionHeaders :headers="session.requestHeaders" label="Request Headers" />
+      <SessionHeaders :headers="session.responseHeaders" label="Response Headers" />
     </div>
 
   </div>
@@ -255,28 +243,6 @@ function formatJson(obj: unknown): string {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.headers-details + .headers-details {
-  margin-top: 8px;
-}
-.headers-details summary {
-  font-size: 11px;
-  color: #858585;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  user-select: none;
-}
-.headers-details summary:hover {
-  color: #d4d4d4;
-}
-.headers-details summary::marker,
-.headers-details summary::-webkit-details-marker {
-  color: #858585;
-}
-.headers-details pre {
-  margin-top: 6px;
 }
 
 .hit-count {
