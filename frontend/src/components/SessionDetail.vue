@@ -184,8 +184,10 @@ function formatBodyHtml(body: string): string {
 
     <!-- Standard request viewer -->
     <template v-else>
-      <h3>Request Headers</h3>
-      <pre>{{ formatJson(session.requestHeaders) }}</pre>
+      <details class="headers-details">
+        <summary>Request Headers</summary>
+        <pre>{{ formatJson(session.requestHeaders) }}</pre>
+      </details>
 
       <div class="section-hdr">
         <h3>Request Body</h3>
@@ -193,8 +195,10 @@ function formatBodyHtml(body: string): string {
       </div>
       <pre v-html="formatBodyHtml(session.requestBody)"></pre>
 
-      <h3>Response Headers</h3>
-      <pre>{{ formatJson(session.responseHeaders) }}</pre>
+      <details class="headers-details">
+        <summary>Response Headers</summary>
+        <pre>{{ formatJson(session.responseHeaders) }}</pre>
+      </details>
 
       <div class="section-hdr">
         <h3>Response Body</h3>
@@ -226,6 +230,29 @@ h3 {
   text-transform: uppercase;
   margin: 12px 0 4px;
   letter-spacing: 0.05em;
+}
+
+.headers-details {
+  margin: 12px 0 4px;
+}
+.headers-details summary {
+  font-size: 11px;
+  color: #858585;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  user-select: none;
+  display: list-item;
+}
+.headers-details summary::marker,
+.headers-details summary::-webkit-details-marker {
+  color: #858585;
+}
+.headers-details summary:hover {
+  color: #d4d4d4;
+}
+.headers-details pre {
+  margin-top: 4px;
 }
 
 pre {
