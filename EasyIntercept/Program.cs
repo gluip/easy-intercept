@@ -31,6 +31,7 @@ builder.Services.AddHttpClient("replay").ConfigurePrimaryHttpMessageHandler(() =
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<CertificateService>();
 builder.Services.AddSingleton<AutoResponderStore>();
+builder.Services.AddSingleton<SystemProxyService>();
 builder.Services.AddHostedService<ProxyServer>();
 
 var app = builder.Build();
@@ -94,6 +95,16 @@ app.MapPut("/api/auto-responders/{id:guid}", (Guid id, AutoResponderRule rule, A
 app.MapDelete("/api/auto-responders/{id:guid}", (Guid id, AutoResponderStore store) =>
     store.Remove(id) ? Results.Ok() : Results.NotFound());
 
+app.MapGet("/api/system-proxy", (SystemProxyService proxy) =>
+    Results.Ok(new { enabled = proxy.IsEnabled() }));
+
+app.MapPost("/api/system-proxy", (SystemProxyEnableRequest body, SystemProxyService proxy) =>
+{
+    if (body.Enabled) proxy.Enable();
+    else proxy.Disable();
+    return Results.Ok(new { enabled = proxy.IsEnabled() });
+});
+
 app.MapGet("/ca", (CertificateService certs) =>
 {
     var path = certs.CaCertPath;
@@ -146,3 +157,5 @@ app.MapGet("/install", async (HttpContext ctx) =>
 });
 
 await app.RunAsync();
+
+record SystemProxyEnableRequest(bool Enabled);
