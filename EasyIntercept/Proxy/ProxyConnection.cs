@@ -183,8 +183,11 @@ public class ProxyConnection
         var (actualBody, _) = DecompressRequestBodyIfNeeded(reqBody, reqHeaders);
         var isReqText = reqHeaders.TryGetValue("Content-Type", out var reqCt) && IsTextContentType(reqCt);
 
+        var startTime = DateTime.UtcNow;
+
         // Auto-responder check — runs before any upstream request
-        var match = _autoResponder.FindMatch(method, url);
+        var requestBodyText = actualBody.Length > 0 ? Encoding.UTF8.GetString(actualBody) : "";
+        var match = _autoResponder.FindMatch(method, url, requestBodyText);
         if (match is not null)
         {
             var bodyBytes = Encoding.UTF8.GetBytes(match.ResponseBody);
@@ -209,6 +212,9 @@ public class ProxyConnection
             sb.Append("X-EasyIntercept-AutoResponder: true\r\n");
             sb.Append("Connection: close\r\n\r\n");
 
+            if (match.LatencyMs > 0)
+                await Task.Delay(match.LatencyMs);
+
             await stream.WriteAsync(Encoding.ASCII.GetBytes(sb.ToString()));
             await stream.WriteAsync(bodyBytes);
 
@@ -220,6 +226,7 @@ public class ProxyConnection
 
             var session = new ProxySession
             {
+                Timestamp = startTime,
                 Method = method,
                 Url = url,
                 RequestHeaders = reqHeaders,
@@ -229,7 +236,7 @@ public class ProxyConnection
                 ResponseStatus = match.ResponseStatus,
                 ResponseHeaders = fakeRespHeaders,
                 ResponseBody = match.ResponseBody,
-                DurationMs = 0,
+                DurationMs = match.LatencyMs,
             };
 
             _sessions.Add(session);
@@ -316,6 +323,7 @@ public class ProxyConnection
 
             var session = new ProxySession
             {
+                Timestamp = startTime,
                 Method = method,
                 Url = url,
                 RequestHeaders = reqHeaders,

@@ -20,4 +20,7 @@ export interface AutoResponderRule {
   responseStatus: number;
   responseHeaders: Record<string, string>;
   responseBody: string;
+  latencyMs: number;
+  bodyMatchType: "none" | "contains" | "regex";
+  bodyMatch: string;
 }

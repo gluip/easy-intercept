@@ -10,7 +10,6 @@ import AutoResponder from "./components/AutoResponder.vue";
 const {
   sessions,
   connected,
-  pendingSession,
   connect,
   loadSessions,
   clearSessions,
@@ -107,6 +106,9 @@ function handleAddAutoResponse(session: ProxySession) {
     responseStatus: session.responseStatus,
     responseHeaders: cleanHeaders,
     responseBody: session.responseBody,
+    latencyMs: 0,
+    bodyMatchType: "none",
+    bodyMatch: "",
   } as AutoResponderRule;
   activeTab.value = "auto-responder";
 }
