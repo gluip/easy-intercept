@@ -14,6 +14,9 @@ public class AutoResponderRule
     public int ResponseStatus { get; set; } = 200;
     public Dictionary<string, string> ResponseHeaders { get; set; } = new();
     public string ResponseBody { get; set; } = "";
+    public int LatencyMs { get; set; } = 0;
+    public string BodyMatchType { get; set; } = "none"; // none | contains | regex
+    public string BodyMatch { get; set; } = "";
 }
 
 public class AutoResponderStore
@@ -55,11 +58,20 @@ public class AutoResponderStore
         return true;
     }
 
-    public AutoResponderRule? FindMatch(string method, string url) =>
+    public AutoResponderRule? FindMatch(string method, string url, string body) =>
         _rules.Values.FirstOrDefault(r =>
             r.IsEnabled &&
             r.Method.Equals(method, StringComparison.OrdinalIgnoreCase) &&
-            r.Url.Equals(url, StringComparison.Ordinal));
+            r.Url.Equals(url, StringComparison.Ordinal) &&
+            MatchesBody(r, body));
+
+    private static bool MatchesBody(AutoResponderRule rule, string body) =>
+        rule.BodyMatchType switch
+        {
+            "contains" => body.Contains(rule.BodyMatch ?? "", StringComparison.OrdinalIgnoreCase),
+            "regex"    => !string.IsNullOrEmpty(rule.BodyMatch) && Regex.IsMatch(body, rule.BodyMatch),
+            _          => true,
+        };
 
     private void SaveToDisk(AutoResponderRule rule)
     {

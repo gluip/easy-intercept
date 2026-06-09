@@ -10,7 +10,6 @@ import AutoResponder from "./components/AutoResponder.vue";
 const {
   sessions,
   connected,
-  pendingSession,
   connect,
   loadSessions,
   clearSessions,
@@ -23,7 +22,23 @@ const {
   updateRule,
   deleteRule,
   toggleRule,
+  systemProxyEnabled,
+  loadSystemProxy,
+  setSystemProxy,
 } = useProxy();
+
+const systemProxyBusy = ref(false);
+
+async function toggleSystemProxy() {
+  systemProxyBusy.value = true;
+  try {
+    await setSystemProxy(!systemProxyEnabled.value);
+  } catch (e) {
+    console.error("Failed to toggle system proxy:", e);
+  } finally {
+    systemProxyBusy.value = false;
+  }
+}
 
 const selectedIds = ref<string[]>([]);
 const listWidth = ref(600);
@@ -107,6 +122,9 @@ function handleAddAutoResponse(session: ProxySession) {
     responseStatus: session.responseStatus,
     responseHeaders: cleanHeaders,
     responseBody: session.responseBody,
+    latencyMs: 0,
+    bodyMatchType: "none",
+    bodyMatch: "",
   } as AutoResponderRule;
   activeTab.value = "auto-responder";
 }
@@ -120,6 +138,11 @@ onMounted(async () => {
   }
   await loadSessions();
   await loadRules();
+  try {
+    await loadSystemProxy();
+  } catch (e) {
+    console.error("Failed to load system proxy state:", e);
+  }
 });
 </script>
 
@@ -128,6 +151,16 @@ onMounted(async () => {
     <header>
       <h1>EasyIntercept</h1>
       <small>proxy → localhost:9999 &nbsp;|&nbsp; ui → localhost:8080</small>
+      <button
+        class="system-proxy-btn"
+        :class="{ active: systemProxyEnabled }"
+        :disabled="systemProxyBusy"
+        @click="toggleSystemProxy"
+        :title="systemProxyEnabled ? 'Klik om systeem-proxy uit te zetten' : 'Klik om Windows als systeem-proxy te gebruiken (127.0.0.1:9999)'"
+      >
+        <span class="dot" />
+        {{ systemProxyEnabled ? "System proxy: ON" : "System proxy: OFF" }}
+      </button>
     </header>
 
     <div class="tab-bar">
@@ -263,6 +296,44 @@ header h1 {
 header small {
   color: #858585;
   font-size: 12px;
+}
+
+.system-proxy-btn {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #3c3c3c;
+  border: 1px solid #555;
+  color: #858585;
+  padding: 5px 12px;
+  border-radius: 3px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+.system-proxy-btn:hover:not(:disabled) {
+  color: #d4d4d4;
+  border-color: #569cd6;
+}
+.system-proxy-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.system-proxy-btn .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #555;
+  flex-shrink: 0;
+}
+.system-proxy-btn.active {
+  color: #4ec9b0;
+  border-color: #4ec9b0;
+  background: #1e3a2f;
+}
+.system-proxy-btn.active .dot {
+  background: #4ec9b0;
+  box-shadow: 0 0 6px #4ec9b0;
 }
 
 .toolbar {

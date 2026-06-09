@@ -9,6 +9,8 @@ const pendingSession = ref<ProxySession | null>(null);
 const autoResponderRules = ref<AutoResponderRule[]>([]);
 const pendingRule = ref<AutoResponderRule | null>(null);
 
+const systemProxyEnabled = ref(false);
+
 const connection = new HubConnectionBuilder()
   .withUrl("/proxy-hub")
   .withAutomaticReconnect()
@@ -87,6 +89,22 @@ async function toggleRule(id: string) {
   await updateRule({ ...rule, isEnabled: !rule.isEnabled });
 }
 
+async function loadSystemProxy() {
+  const r = await fetch("/api/system-proxy");
+  const data = await r.json();
+  systemProxyEnabled.value = data.enabled;
+}
+
+async function setSystemProxy(enabled: boolean) {
+  const r = await fetch("/api/system-proxy", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  const data = await r.json();
+  systemProxyEnabled.value = data.enabled;
+}
+
 export function useProxy() {
   return {
     sessions: readonly(sessions),
@@ -104,5 +122,8 @@ export function useProxy() {
     updateRule,
     deleteRule,
     toggleRule,
+    systemProxyEnabled: readonly(systemProxyEnabled),
+    loadSystemProxy,
+    setSystemProxy,
   };
 }

@@ -105,6 +105,9 @@ function startNew() {
     responseStatus: 200,
     responseHeaders: {},
     responseBody: "",
+    latencyMs: 0,
+    bodyMatchType: "none",
+    bodyMatch: "",
   };
   isNew.value = true;
 }
@@ -220,12 +223,35 @@ function saveRule() {
           </div>
         </div>
 
-        <label>Response Status</label>
-        <input
-          v-model.number="editingRule.responseStatus"
-          type="number"
-          class="field status-field"
-        />
+        <div class="row">
+          <div class="field-group">
+            <label>Body match</label>
+            <select v-model="editingRule.bodyMatchType" class="field">
+              <option value="none">— none —</option>
+              <option value="contains">contains</option>
+              <option value="regex">regex</option>
+            </select>
+          </div>
+          <div class="field-group" style="flex:1" v-if="editingRule.bodyMatchType !== 'none'">
+            <label>{{ editingRule.bodyMatchType === 'regex' ? 'Pattern' : 'Search text' }}</label>
+            <input
+              v-model="editingRule.bodyMatch"
+              class="field mono"
+              :placeholder="editingRule.bodyMatchType === 'regex' ? '(?i)Component.*9763' : 'Component:9763'"
+            />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field-group">
+            <label>Response Status</label>
+            <input v-model.number="editingRule.responseStatus" type="number" class="field status-field" />
+          </div>
+          <div class="field-group">
+            <label>Latency (ms)</label>
+            <input v-model.number="editingRule.latencyMs" type="number" min="0" class="field status-field" placeholder="0" />
+          </div>
+        </div>
 
         <label>Response Headers (one per line: Key: Value)</label>
         <textarea v-model="headersText" class="field mono" rows="4" />

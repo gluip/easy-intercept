@@ -5,6 +5,7 @@ import { isLLMRequest } from "../utils/llm-detection";
 import { isElasticsearchRequest } from "../utils/es-detection";
 import LLMSessionDetail from "./LLMSessionDetail.vue";
 import ElasticsearchSessionDetail from "./ElasticsearchSessionDetail.vue";
+import SessionHeaders from "./SessionHeaders.vue";
 
 const props = defineProps<{
   session: ProxySession;
@@ -184,8 +185,7 @@ function formatBodyHtml(body: string): string {
 
     <!-- Standard request viewer -->
     <template v-else>
-      <h3>Request Headers</h3>
-      <pre>{{ formatJson(session.requestHeaders) }}</pre>
+      <SessionHeaders :headers="session.requestHeaders" label="Request Headers" />
 
       <div class="section-hdr">
         <h3>Request Body</h3>
@@ -193,8 +193,7 @@ function formatBodyHtml(body: string): string {
       </div>
       <pre v-html="formatBodyHtml(session.requestBody)"></pre>
 
-      <h3>Response Headers</h3>
-      <pre>{{ formatJson(session.responseHeaders) }}</pre>
+      <SessionHeaders :headers="session.responseHeaders" label="Response Headers" />
 
       <div class="section-hdr">
         <h3>Response Body</h3>

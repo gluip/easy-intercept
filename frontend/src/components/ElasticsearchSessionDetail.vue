@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import type { ProxySession } from "../types";
 import { detectESOperation, parseESIndex, parseFilters } from "../utils/es-detection";
+import SessionHeaders from "./SessionHeaders.vue";
 
 const props = defineProps<{ session: ProxySession }>();
 
@@ -56,6 +57,7 @@ function sourceEntries(source: Record<string, unknown>): [string, string][] {
     typeof v === "object" ? JSON.stringify(v) : String(v),
   ]);
 }
+
 </script>
 
 <template>
@@ -170,6 +172,12 @@ function sourceEntries(source: Record<string, unknown>): [string, string][] {
         <pre>{{ session.responseBody }}</pre>
       </div>
     </template>
+
+    <!-- Headers (collapsed by default) -->
+    <div class="section">
+      <SessionHeaders :headers="session.requestHeaders" label="Request Headers" />
+      <SessionHeaders :headers="session.responseHeaders" label="Response Headers" />
+    </div>
 
   </div>
 </template>

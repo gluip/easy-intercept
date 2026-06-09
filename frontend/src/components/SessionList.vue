@@ -477,11 +477,11 @@ function esPreview(s: ProxySession): string | null {
             URL
             <div class="col-resize-handle" @mousedown="startColResize('url', $event)" />
           </th>
-          <th class="col-tools" :style="{ width: colWidths.tools + 'px' }" title="Tool calls">
+          <th v-if="llmOnly" class="col-tools" :style="{ width: colWidths.tools + 'px' }" title="Tool calls">
             Tools
             <div class="col-resize-handle" @mousedown="startColResize('tools', $event)" />
           </th>
-          <th class="col-results" :style="{ width: colWidths.results + 'px' }" title="Tool results">
+          <th v-if="llmOnly" class="col-results" :style="{ width: colWidths.results + 'px' }" title="Tool results">
             Results
             <div class="col-resize-handle" @mousedown="startColResize('results', $event)" />
           </th>
@@ -517,7 +517,7 @@ function esPreview(s: ProxySession): string | null {
             <span v-else-if="esPreview(s)" class="es-preview">{{ esPreview(s) }}</span>
             <span v-else>{{ s.url }}</span>
           </td>
-          <td class="col-tools">
+          <td v-if="llmOnly" class="col-tools">
             <span
               v-for="name in llmToolCalls(s)"
               :key="name"
@@ -525,7 +525,7 @@ function esPreview(s: ProxySession): string | null {
               :title="name"
             >{{ name }}</span>
           </td>
-          <td class="col-results">
+          <td v-if="llmOnly" class="col-results">
             <span
               v-for="(r, i) in llmToolResults(s)"
               :key="i"
@@ -648,8 +648,6 @@ td {
 
 .col-method {
   font-weight: bold;
-}
-.col-status {
 }
 .col-url {
   text-overflow: ellipsis;
