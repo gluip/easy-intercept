@@ -310,10 +310,26 @@ public class ProxyConnection
             await stream.WriteAsync(respBody);
 
             // Log session
-            var isText = respBody.Length == 0
+            respHeaders.TryGetValue("Content-Type", out var rct);
+            rct ??= "";
+            var rctLower = rct.ToLowerInvariant();
+            var isImageType = rctLower.StartsWith("image/") && !rctLower.Contains("svg");
+            var isText = !isImageType && (
+                respBody.Length == 0
                 || respBody.Length <= 4096
-                || (respHeaders.TryGetValue("Content-Type", out var rct)
-                    && (rct.Contains("text/") || rct.Contains("json") || rct.Contains("xml") || rct.Contains("javascript")));
+                || rctLower.Contains("text/")
+                || rctLower.Contains("json")
+                || rctLower.Contains("xml")
+                || rctLower.Contains("javascript"));
+
+            const int MaxImageBytes = 5 * 1024 * 1024;
+            string responseBodyStr;
+            if (isImageType && respBody.Length > 0 && respBody.Length <= MaxImageBytes)
+                responseBodyStr = $"data:{rct};base64,{Convert.ToBase64String(respBody)}";
+            else if (isImageType)
+                responseBodyStr = $"[{respBody.Length} bytes image]";
+            else
+                responseBodyStr = isText ? Encoding.UTF8.GetString(respBody) : $"[{respBody.Length} bytes]";
 
             var sessionHeaders = respHeaders
                 .Where(h => !h.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase)
@@ -331,7 +347,7 @@ public class ProxyConnection
                     : (actualBody.Length > 0 ? $"[{actualBody.Length} bytes binary]" : ""),
                 ResponseStatus = (int)upstream.StatusCode,
                 ResponseHeaders = sessionHeaders,
-                ResponseBody = isText ? Encoding.UTF8.GetString(respBody) : $"[{respBody.Length} bytes]",
+                ResponseBody = responseBodyStr,
                 DurationMs = sw.ElapsedMilliseconds,
             };
 

@@ -19,6 +19,25 @@ const emit = defineEmits<{
 const isLLM = computed(() => isLLMRequest(props.session));
 const isES = computed(() => !isLLM.value && isElasticsearchRequest(props.session));
 
+function getHeader(headers: Record<string, string>, name: string): string {
+  const key = Object.keys(headers).find(k => k.toLowerCase() === name.toLowerCase());
+  return key ? headers[key] : '';
+}
+
+const resContentType = computed(() => getHeader(props.session.responseHeaders, 'content-type').toLowerCase());
+
+const isResponseImage = computed(() =>
+  props.session.responseBody.startsWith('data:image/') || resContentType.value.includes('image/')
+);
+
+const responseImageSrc = computed(() => {
+  const body = props.session.responseBody;
+  if (body.startsWith('data:image/')) return body;
+  if (resContentType.value.includes('svg'))
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(body)}`;
+  return '';
+});
+
 function formatJson(obj: unknown): string {
   try {
     if (typeof obj === "string") {
@@ -199,7 +218,10 @@ function formatBodyHtml(body: string): string {
         <h3>Response Body</h3>
         <button class="view-btn" @click="emit('openViewer', session, 'response')">⬡ View</button>
       </div>
-      <pre v-html="formatBodyHtml(session.responseBody)"></pre>
+      <div v-if="isResponseImage && responseImageSrc" class="image-preview">
+        <img :src="responseImageSrc" class="preview-image" />
+      </div>
+      <pre v-else v-html="formatBodyHtml(session.responseBody)"></pre>
     </template>
   </div>
 </template>
@@ -278,6 +300,25 @@ pre {
 .view-btn:hover {
   background: #569cd6;
   color: #1e1e1e;
+}
+
+.image-preview {
+  background: #252526;
+  border: 1px solid #3e3e42;
+  border-radius: 3px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: 300px;
+  overflow: hidden;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  border-radius: 2px;
 }
 
 /* Syntax highlighting */

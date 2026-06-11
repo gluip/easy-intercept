@@ -58,6 +58,25 @@ function tryParse(s: string): unknown | null {
 const parsedReqBody = computed(() => tryParse(props.session.requestBody));
 const parsedResBody = computed(() => tryParse(props.session.responseBody));
 
+function getHeader(headers: Record<string, string>, name: string): string {
+  const key = Object.keys(headers).find(k => k.toLowerCase() === name.toLowerCase());
+  return key ? headers[key] : '';
+}
+
+const resContentType = computed(() => getHeader(props.session.responseHeaders, 'content-type').toLowerCase());
+
+const isResponseImage = computed(() =>
+  props.session.responseBody.startsWith('data:image/') || resContentType.value.includes('image/')
+);
+
+const responseImageSrc = computed(() => {
+  const body = props.session.responseBody;
+  if (body.startsWith('data:image/')) return body;
+  if (resContentType.value.includes('svg'))
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(body)}`;
+  return '';
+});
+
 // Copy body to clipboard
 const reqCopied = ref(false);
 const resCopied = ref(false);
@@ -237,24 +256,32 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown));
             <div class="section-toolbar">
               <span class="section-label">Body</span>
               <div class="toolbar-right">
-                <button class="tool-btn" @click="resRawMode = !resRawMode">
-                  {{ resRawMode ? "Tree" : "Raw" }}
-                </button>
-                <template v-if="!resRawMode && parsedResBody !== null">
-                  <button class="tool-btn" @click="resExpandAll">
-                    Expand All
+                <template v-if="!isResponseImage">
+                  <button class="tool-btn" @click="resRawMode = !resRawMode">
+                    {{ resRawMode ? "Tree" : "Raw" }}
                   </button>
-                  <button class="tool-btn" @click="resCollapseAll">
-                    Collapse All
-                  </button>
+                  <template v-if="!resRawMode && parsedResBody !== null">
+                    <button class="tool-btn" @click="resExpandAll">
+                      Expand All
+                    </button>
+                    <button class="tool-btn" @click="resCollapseAll">
+                      Collapse All
+                    </button>
+                  </template>
                 </template>
+                <a v-if="isResponseImage && responseImageSrc" :href="responseImageSrc" download class="tool-btn">
+                  Download
+                </a>
                 <button class="tool-btn copy-btn" @click="copyResBody">
                   {{ resCopied ? "✓ Copied" : "Copy" }}
                 </button>
               </div>
             </div>
             <div class="body-container">
-              <pre v-if="resRawMode" class="body-raw">{{
+              <div v-if="isResponseImage && responseImageSrc && !resRawMode" class="body-image-container">
+                <img :src="responseImageSrc" class="body-image" />
+              </div>
+              <pre v-else-if="resRawMode" class="body-raw">{{
                 session.responseBody || "(empty)"
               }}</pre>
               <div v-else-if="parsedResBody !== null" class="body-tree">
@@ -523,5 +550,20 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown));
   font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.body-image-container {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+.body-image {
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: 4px;
+  border: 1px solid #3e3e42;
 }
 </style>
