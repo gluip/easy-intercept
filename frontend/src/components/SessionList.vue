@@ -16,6 +16,7 @@ const emit = defineEmits<{
   copyUrl: [session: ProxySession];
   replay: [session: ProxySession];
   deleteSelected: [ids: string[]];
+  compare: [ids: [string, string]];
 }>();
 
 const listEl = ref<HTMLElement>();
@@ -46,11 +47,17 @@ const filteredSessions = computed(() => {
   return result;
 });
 
-const menuItems = [
-  { label: "Copy URL", icon: "📋", action: "copy-url" },
-  { label: "Replay", icon: "🔁", action: "replay" },
-  { label: "Delete", icon: "🗑️", action: "delete" },
-];
+const menuItems = computed(() => {
+  const items = [
+    { label: "Copy URL", icon: "📋", action: "copy-url" },
+    { label: "Replay", icon: "🔁", action: "replay" },
+    { label: "Delete", icon: "🗑️", action: "delete" },
+  ];
+  if (props.selectedIds.length === 2) {
+    items.splice(2, 0, { label: "Compare", icon: "⚖️", action: "compare" });
+  }
+  return items;
+});
 
 function handleClick(e: MouseEvent, session: ProxySession) {
   const meta = e.metaKey || e.ctrlKey;
@@ -104,6 +111,8 @@ function onMenuSelect(action: string) {
   if (action === "copy-url") emit("copyUrl", session);
   else if (action === "replay") emit("replay", session);
   else if (action === "delete") emit("deleteSelected", [...props.selectedIds]);
+  else if (action === "compare" && props.selectedIds.length === 2)
+    emit("compare", [props.selectedIds[0], props.selectedIds[1]]);
 }
 
 function onKeyDown(e: KeyboardEvent) {

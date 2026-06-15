@@ -6,6 +6,7 @@ import SessionList from "./components/SessionList.vue";
 import SessionDetail from "./components/SessionDetail.vue";
 import SessionViewer from "./components/SessionViewer.vue";
 import AutoResponder from "./components/AutoResponder.vue";
+import CompareViewer from "./components/CompareViewer.vue";
 
 const {
   sessions,
@@ -72,6 +73,15 @@ async function handleDeleteSelected(ids: string[]) {
 // Session viewer
 const viewerSession = ref<ProxySession | null>(null);
 const viewerTab = ref<"request" | "response">("request");
+
+// Compare viewer
+const comparePair = ref<[ProxySession, ProxySession] | null>(null);
+
+function handleCompare(ids: [string, string]) {
+  const a = sessions.value.find((s) => s.id === ids[0]);
+  const b = sessions.value.find((s) => s.id === ids[1]);
+  if (a && b) comparePair.value = [a, b];
+}
 
 function openViewer(session: ProxySession, tab: "request" | "response") {
   viewerSession.value = session;
@@ -197,6 +207,7 @@ onMounted(async () => {
           @select="selectSessions"
           @replay="handleReplay"
           @delete-selected="handleDeleteSelected"
+          @compare="handleCompare"
         />
       </div>
       <div class="divider" @mousedown.prevent="startDrag" />
@@ -238,6 +249,13 @@ onMounted(async () => {
       :session="viewerSession"
       :initial-tab="viewerTab"
       @close="closeViewer"
+    />
+
+    <CompareViewer
+      v-if="comparePair"
+      :a="comparePair[0]"
+      :b="comparePair[1]"
+      @close="comparePair = null"
     />
   </div>
 </template>
