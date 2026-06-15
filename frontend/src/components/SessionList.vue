@@ -5,6 +5,7 @@ import ContextMenu, { type MenuItem } from "./ContextMenu.vue";
 import { detectLLMProvider } from "../utils/llm-detection";
 import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream } from "../utils/llm-stream-parser";
 import { isElasticsearchRequest, detectESOperation, parseESIndex } from "../utils/es-detection";
+import { isGraphQLRequest, parseGraphQLRequest, getOperationName, getOperationType } from "../utils/graphql-detection";
 
 const props = defineProps<{
   sessions: readonly ProxySession[];
@@ -513,6 +514,14 @@ function esPreview(s: ProxySession): string | null {
   } catch { /* fall through */ }
   return idx ? `${op}  ·  ${idx}` : null;
 }
+
+function graphqlPreview(s: ProxySession): string | null {
+  if (!isGraphQLRequest(s)) return null;
+  const ops = parseGraphQLRequest(s);
+  if (!ops || ops.length === 0) return null;
+  const names = ops.map((op) => `${getOperationType(op.query)} ${getOperationName(op) ?? "?"}`);
+  return names.join(", ");
+}
 </script>
 
 <template>
@@ -592,6 +601,7 @@ function esPreview(s: ProxySession): string | null {
             >
             <span v-if="llmPreview(s)" class="llm-preview">{{ llmPreview(s) }}</span>
             <span v-else-if="esPreview(s)" class="es-preview">{{ esPreview(s) }}</span>
+            <span v-else-if="graphqlPreview(s)" class="gql-preview">{{ graphqlPreview(s) }}</span>
             <span v-else>{{ s.url }}</span>
           </td>
           <td v-if="llmOnly" class="col-tools">
@@ -831,6 +841,11 @@ td {
 
 .es-preview {
   color: #4ec9b0;
+  font-style: italic;
+}
+
+.gql-preview {
+  color: #9cdcfe;
   font-style: italic;
 }
 

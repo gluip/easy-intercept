@@ -3,8 +3,10 @@ import { ref, computed } from "vue";
 import type { ProxySession } from "../types";
 import { isLLMRequest } from "../utils/llm-detection";
 import { isElasticsearchRequest } from "../utils/es-detection";
+import { isGraphQLRequest } from "../utils/graphql-detection";
 import LLMSessionDetail from "./LLMSessionDetail.vue";
 import ElasticsearchSessionDetail from "./ElasticsearchSessionDetail.vue";
+import GraphQLSessionDetail from "./GraphQLSessionDetail.vue";
 import SessionHeaders from "./SessionHeaders.vue";
 
 const props = defineProps<{
@@ -18,6 +20,7 @@ const emit = defineEmits<{
 
 const isLLM = computed(() => isLLMRequest(props.session));
 const isES = computed(() => !isLLM.value && isElasticsearchRequest(props.session));
+const isGraphQL = computed(() => !isLLM.value && !isES.value && isGraphQLRequest(props.session));
 
 function formatJson(obj: unknown): string {
   try {
@@ -242,6 +245,13 @@ function downloadRequestResponse() {
     <ElasticsearchSessionDetail
       v-else-if="isES"
       :session="session"
+    />
+
+    <!-- GraphQL viewer -->
+    <GraphQLSessionDetail
+      v-else-if="isGraphQL"
+      :session="session"
+      @open-viewer="(s, t) => emit('openViewer', s, t)"
     />
 
     <!-- Standard request viewer -->
