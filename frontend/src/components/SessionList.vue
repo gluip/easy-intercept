@@ -460,12 +460,22 @@ function esPreview(s: ProxySession): string | null {
 <template>
   <div ref="listEl" class="session-list" tabindex="0">
     <div class="filter-bar">
-      <input
-        v-model="filterText"
-        type="text"
-        placeholder="Filter by URL..."
-        class="filter-input"
-      />
+      <div class="filter-input-wrap">
+        <input
+          v-model="filterText"
+          type="text"
+          placeholder="Filter by URL..."
+          class="filter-input"
+        />
+        <button
+          v-if="filterText"
+          class="filter-clear"
+          title="Clear filter"
+          @click="filterText = ''"
+        >
+          ✕
+        </button>
+      </div>
       <label class="llm-filter">
         <input v-model="llmOnly" type="checkbox" />
         <span>LLM requests only</span>
@@ -587,15 +597,39 @@ function esPreview(s: ProxySession): string | null {
   align-items: center;
 }
 
+.filter-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+}
+
 .filter-input {
   flex: 1;
   background: #3c3c3c;
   border: 1px solid #3e3e42;
   color: #cccccc;
-  padding: 6px 10px;
+  padding: 6px 28px 6px 10px;
   font-size: 12px;
   border-radius: 4px;
   outline: none;
+  width: 100%;
+}
+
+.filter-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #858585;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  line-height: 1;
+}
+.filter-clear:hover {
+  color: #d4d4d4;
 }
 
 .filter-input:focus {
