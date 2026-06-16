@@ -156,3 +156,37 @@ export function parseAnthropicStream(body: string): Record<string, unknown> {
 
   return { id, model, content, usage, stop_reason: stopReason };
 }
+
+export interface CopilotResponsesParsed {
+  model: string;
+  output: { type: string; content?: { type: string; text: string }[]; name?: string; arguments?: string; call_id?: string }[];
+  promptTokens: number;
+  responseTokens: number;
+  cachedTokens: number;
+}
+
+/** Parse GitHub Copilot /responses SSE stream → structured result */
+export function parseCopilotResponsesStream(body: string): CopilotResponsesParsed {
+  const lines = body.split("\n");
+  let result: CopilotResponsesParsed = { model: "unknown", output: [], promptTokens: 0, responseTokens: 0, cachedTokens: 0 };
+
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === "event: response.completed" && i + 1 < lines.length) {
+      const dataLine = lines[i + 1];
+      if (!dataLine.startsWith("data:")) continue;
+      try {
+        const obj = JSON.parse(dataLine.slice(5).trim());
+        const resp = obj.response ?? {};
+        result.model = resp.model ?? "unknown";
+        result.output = resp.output ?? [];
+        const details: { token_type: string; token_count: number }[] = obj.copilot_usage?.token_details ?? [];
+        for (const td of details) {
+          if (td.token_type === "input") result.promptTokens = td.token_count;
+          else if (td.token_type === "cache_read") result.cachedTokens = td.token_count;
+          else if (td.token_type === "output") result.responseTokens = td.token_count;
+        }
+      } catch { /* ignore */ }
+    }
+  }
+  return result;
+}

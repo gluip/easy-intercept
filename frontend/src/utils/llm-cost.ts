@@ -32,6 +32,10 @@ const ANTHROPIC_PRICING: Array<[string, ModelPricing]> = [
   ["claude-haiku-3",   { inputPerMTok: 0.80,  outputPerMTok: 4.00,  cachedPerMTok: 0.08 }],
 ];
 
+const COPILOT_PRICING: Array<[string, ModelPricing]> = [
+  ["mai-code-1-flash-picker", { inputPerMTok: 0.75, outputPerMTok: 4.50, cachedPerMTok: 0 }],
+];
+
 // Ordered longest-prefix-first; cached = 0.5x input price for OpenAI
 const OPENAI_PRICING: Array<[string, ModelPricing]> = [
   // gpt-5.x flagship (May 2026)
@@ -81,7 +85,7 @@ export interface CostBreakdown {
  * thoughtTokens (Gemini) are billed as output tokens.
  */
 export function calcCost(
-  provider: "gemini" | "anthropic" | "openai",
+  provider: "gemini" | "anthropic" | "openai" | "copilot",
   modelVersion: string,
   promptTokens: number,
   responseTokens: number,
@@ -96,6 +100,8 @@ export function calcCost(
     pricing = matchPricing(modelVersion, ANTHROPIC_PRICING);
   } else if (provider === "openai") {
     pricing = matchPricing(modelVersion, OPENAI_PRICING);
+  } else if (provider === "copilot") {
+    pricing = matchPricing(modelVersion, COPILOT_PRICING);
   }
 
   if (!pricing) return null;

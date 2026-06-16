@@ -4,7 +4,7 @@ import type { ProxySession, AutoResponderRule } from "./types";
 import { useProxy } from "./composables/useProxy";
 import { detectLLMProvider } from "./utils/llm-detection";
 import { calcCost, formatCost } from "./utils/llm-cost";
-import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream } from "./utils/llm-stream-parser";
+import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream } from "./utils/llm-stream-parser";
 import SessionList from "./components/SessionList.vue";
 import SessionDetail from "./components/SessionDetail.vue";
 import SessionViewer from "./components/SessionViewer.vue";
@@ -65,33 +65,40 @@ const selectionStats = computed(() => {
     const provider = detectLLMProvider(s);
     if (!provider || s.responseStatus === 0) continue;
     try {
-      let res: any;
-      if (isStreamingResponse(s.responseBody)) {
-        if (provider === "openai") res = parseOpenAIStream(s.responseBody);
-        else if (provider === "anthropic") res = parseAnthropicStream(s.responseBody);
-        else res = JSON.parse(s.responseBody);
-      } else {
-        res = JSON.parse(s.responseBody);
-      }
-
       let p = 0, r = 0, c = 0, t = 0, model = "unknown";
-      if (provider === "gemini") {
-        const u = res.usageMetadata ?? {};
-        p = u.promptTokenCount ?? 0; r = u.candidatesTokenCount ?? 0;
-        c = u.cachedContentTokenCount ?? 0; t = u.thoughtsTokenCount ?? 0;
-        model = res.modelVersion ?? "unknown";
-      } else if (provider === "anthropic") {
-        const u = res.usage ?? {};
-        p = u.input_tokens ?? 0; r = u.output_tokens ?? 0;
-        c = u.cache_read_input_tokens ?? 0;
-        const req = JSON.parse(s.requestBody);
-        model = res.model ?? req.model ?? "unknown";
-      } else if (provider === "openai") {
-        const u = res.usage ?? {};
-        p = u.prompt_tokens ?? 0; r = u.completion_tokens ?? 0;
-        c = (u.prompt_tokens_details ?? {}).cached_tokens ?? 0;
-        const req = JSON.parse(s.requestBody);
-        model = res.model ?? req.model ?? "unknown";
+
+      if (provider === "copilot") {
+        const parsed = parseCopilotResponsesStream(s.responseBody);
+        p = parsed.promptTokens; r = parsed.responseTokens; c = parsed.cachedTokens;
+        model = parsed.model;
+      } else {
+        let res: any;
+        if (isStreamingResponse(s.responseBody)) {
+          if (provider === "openai") res = parseOpenAIStream(s.responseBody);
+          else if (provider === "anthropic") res = parseAnthropicStream(s.responseBody);
+          else res = JSON.parse(s.responseBody);
+        } else {
+          res = JSON.parse(s.responseBody);
+        }
+
+        if (provider === "gemini") {
+          const u = res.usageMetadata ?? {};
+          p = u.promptTokenCount ?? 0; r = u.candidatesTokenCount ?? 0;
+          c = u.cachedContentTokenCount ?? 0; t = u.thoughtsTokenCount ?? 0;
+          model = res.modelVersion ?? "unknown";
+        } else if (provider === "anthropic") {
+          const u = res.usage ?? {};
+          p = u.input_tokens ?? 0; r = u.output_tokens ?? 0;
+          c = u.cache_read_input_tokens ?? 0;
+          const req = JSON.parse(s.requestBody);
+          model = res.model ?? req.model ?? "unknown";
+        } else if (provider === "openai") {
+          const u = res.usage ?? {};
+          p = u.prompt_tokens ?? 0; r = u.completion_tokens ?? 0;
+          c = (u.prompt_tokens_details ?? {}).cached_tokens ?? 0;
+          const req = JSON.parse(s.requestBody);
+          model = res.model ?? req.model ?? "unknown";
+        }
       }
 
       promptTokens  += p; responseTokens += r;

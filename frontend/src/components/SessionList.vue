@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import type { ProxySession } from "../types";
 import ContextMenu, { type MenuItem } from "./ContextMenu.vue";
 import { detectLLMProvider } from "../utils/llm-detection";
-import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream } from "../utils/llm-stream-parser";
+import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream } from "../utils/llm-stream-parser";
 import { isElasticsearchRequest, detectESOperation, parseESIndex } from "../utils/es-detection";
 import { isGraphQLRequest, parseGraphQLRequest, getOperationName, getOperationType } from "../utils/graphql-detection";
 import { calcCost, formatCost } from "../utils/llm-cost";
@@ -198,12 +198,12 @@ function onKeyDown(e: KeyboardEvent) {
     e.preventDefault();
     emit(
       "select",
-      props.sessions.map((s) => s.id),
+      filteredSessions.value.map((s) => s.id),
     );
   }
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     e.preventDefault();
-    const ids = props.sessions.map((s) => s.id);
+    const ids = filteredSessions.value.map((s) => s.id);
     if (ids.length === 0) return;
     const lastSelected =
       props.selectedIds.length > 0
@@ -313,6 +313,10 @@ function llmPreview(s: ProxySession): string | null {
       )?.text;
     } else if (provider === "openai") {
       text = res.choices?.[0]?.message?.content;
+    } else if (provider === "copilot") {
+      const parsed = parseCopilotResponsesStream(s.responseBody);
+      text = parsed.output.find((o) => o.type === "message")
+        ?.content?.find((c) => c.type === "output_text")?.text;
     }
     return text?.trim() || null;
   } catch {
@@ -534,39 +538,47 @@ function llmCost(s: ProxySession): string | null {
   const provider = detectLLMProvider(s);
   if (!provider) return null;
   try {
-    let res: any;
-    if (isStreamingResponse(s.responseBody)) {
-      if (provider === "openai") res = parseOpenAIStream(s.responseBody);
-      else if (provider === "anthropic") res = parseAnthropicStream(s.responseBody);
-      else res = JSON.parse(s.responseBody);
-    } else {
-      res = JSON.parse(s.responseBody);
-    }
-
     let promptTokens = 0, responseTokens = 0, cachedTokens = 0, thoughtTokens = 0;
     let modelVersion = "unknown";
 
-    if (provider === "gemini") {
-      const u = res.usageMetadata ?? {};
-      promptTokens  = u.promptTokenCount ?? 0;
-      responseTokens = u.candidatesTokenCount ?? 0;
-      cachedTokens  = u.cachedContentTokenCount ?? 0;
-      thoughtTokens = u.thoughtsTokenCount ?? 0;
-      modelVersion  = res.modelVersion ?? "unknown";
-    } else if (provider === "anthropic") {
-      const u = res.usage ?? {};
-      promptTokens  = u.input_tokens ?? 0;
-      responseTokens = u.output_tokens ?? 0;
-      cachedTokens  = u.cache_read_input_tokens ?? 0;
-      const req = JSON.parse(s.requestBody);
-      modelVersion  = res.model ?? req.model ?? "unknown";
-    } else if (provider === "openai") {
-      const u = res.usage ?? {};
-      promptTokens  = u.prompt_tokens ?? 0;
-      responseTokens = u.completion_tokens ?? 0;
-      cachedTokens  = (u.prompt_tokens_details ?? {}).cached_tokens ?? 0;
-      const req = JSON.parse(s.requestBody);
-      modelVersion  = res.model ?? req.model ?? "unknown";
+    if (provider === "copilot") {
+      const parsed = parseCopilotResponsesStream(s.responseBody);
+      promptTokens   = parsed.promptTokens;
+      responseTokens = parsed.responseTokens;
+      cachedTokens   = parsed.cachedTokens;
+      modelVersion   = parsed.model;
+    } else {
+      let res: any;
+      if (isStreamingResponse(s.responseBody)) {
+        if (provider === "openai") res = parseOpenAIStream(s.responseBody);
+        else if (provider === "anthropic") res = parseAnthropicStream(s.responseBody);
+        else res = JSON.parse(s.responseBody);
+      } else {
+        res = JSON.parse(s.responseBody);
+      }
+
+      if (provider === "gemini") {
+        const u = res.usageMetadata ?? {};
+        promptTokens  = u.promptTokenCount ?? 0;
+        responseTokens = u.candidatesTokenCount ?? 0;
+        cachedTokens  = u.cachedContentTokenCount ?? 0;
+        thoughtTokens = u.thoughtsTokenCount ?? 0;
+        modelVersion  = res.modelVersion ?? "unknown";
+      } else if (provider === "anthropic") {
+        const u = res.usage ?? {};
+        promptTokens  = u.input_tokens ?? 0;
+        responseTokens = u.output_tokens ?? 0;
+        cachedTokens  = u.cache_read_input_tokens ?? 0;
+        const req = JSON.parse(s.requestBody);
+        modelVersion  = res.model ?? req.model ?? "unknown";
+      } else if (provider === "openai") {
+        const u = res.usage ?? {};
+        promptTokens  = u.prompt_tokens ?? 0;
+        responseTokens = u.completion_tokens ?? 0;
+        cachedTokens  = (u.prompt_tokens_details ?? {}).cached_tokens ?? 0;
+        const req = JSON.parse(s.requestBody);
+        modelVersion  = res.model ?? req.model ?? "unknown";
+      }
     }
 
     const cost = calcCost(provider, modelVersion, promptTokens, responseTokens, cachedTokens, thoughtTokens);

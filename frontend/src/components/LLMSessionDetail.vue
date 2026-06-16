@@ -3,7 +3,7 @@ import { computed, ref } from "vue";
 import type { ProxySession } from "../types";
 import { detectLLMProvider } from "../utils/llm-detection";
 import { calcCost, formatCost } from "../utils/llm-cost";
-import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream } from "../utils/llm-stream-parser";
+import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream } from "../utils/llm-stream-parser";
 
 const props = defineProps<{
   session: ProxySession;
@@ -35,7 +35,7 @@ interface ToolDef {
 }
 
 interface ParsedLLM {
-  provider: "gemini" | "anthropic" | "openai";
+  provider: "gemini" | "anthropic" | "openai" | "copilot";
   modelVersion: string;
   system?: string;
   turns: GTurn[];
@@ -143,6 +143,60 @@ function parseOpenAIMessages(
 const parsed = computed((): ParsedLLM | null => {
   try {
     const req = JSON.parse(props.session.requestBody);
+
+    // Copilot /responses is SSE — handled entirely by parseCopilotResponsesStream
+    if (provider.value === "copilot") {
+      const input: { role: string; content: { type: string; text?: string }[] | string }[] = req.input ?? [];
+      const turns: GTurn[] = [];
+      let system: string | undefined;
+
+      for (const item of input) {
+        const parts: GPart[] = Array.isArray(item.content)
+          ? item.content.filter((c) => c.type === "input_text" && c.text).map((c) => ({ text: c.text as string }))
+          : [{ text: item.content as string }];
+
+        if (item.role === "system") {
+          system = parts.map((p) => p.text ?? "").join("\n");
+        } else {
+          turns.push({ role: item.role === "assistant" ? "model" : "user", parts });
+        }
+      }
+
+      const cp = parseCopilotResponsesStream(props.session.responseBody);
+      const responseParts: GPart[] = [];
+      for (const item of cp.output) {
+        if (item.type === "message") {
+          for (const c of item.content ?? []) {
+            if (c.type === "output_text") responseParts.push({ text: c.text });
+          }
+        } else if (item.type === "function_call") {
+          let args: Record<string, unknown> = {};
+          try { args = JSON.parse(item.arguments ?? "{}"); } catch { /* ignore */ }
+          responseParts.push({ functionCall: { id: item.call_id ?? "", name: item.name ?? "", args } });
+        }
+      }
+
+      const copilotTools: ToolDef[] = ((req.tools ?? []) as Record<string, unknown>[]).map((t) => ({
+        name: t.name as string,
+        description: t.description as string | undefined,
+        parameters: t.parameters,
+      }));
+
+      return {
+        provider: "copilot",
+        modelVersion: cp.model,
+        system,
+        turns,
+        responseTurn: responseParts.length ? { role: "model", parts: responseParts } : null,
+        tools: copilotTools,
+        promptTokens: cp.promptTokens,
+        responseTokens: cp.responseTokens,
+        cachedTokens: cp.cachedTokens,
+        thoughtTokens: 0,
+        finishReason: "",
+      };
+    }
+
     let res: any;
 
     // If response is streaming SSE, parse it first
