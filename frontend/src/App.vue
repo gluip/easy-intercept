@@ -2,6 +2,9 @@
 import { ref, computed, onMounted } from "vue";
 import type { ProxySession, AutoResponderRule } from "./types";
 import { useProxy } from "./composables/useProxy";
+import { detectLLMProvider } from "./utils/llm-detection";
+import { calcCost, formatCost } from "./utils/llm-cost";
+import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream } from "./utils/llm-stream-parser";
 import SessionList from "./components/SessionList.vue";
 import SessionDetail from "./components/SessionDetail.vue";
 import SessionViewer from "./components/SessionViewer.vue";
@@ -50,6 +53,57 @@ const selectedSession = computed(() =>
     ? (sessions.value.find((s) => s.id === selectedIds.value[0]) ?? null)
     : null,
 );
+
+const selectionStats = computed(() => {
+  if (selectedIds.value.length <= 1) return null;
+  const selected = sessions.value.filter((s) => selectedIds.value.includes(s.id));
+  let promptTokens = 0, responseTokens = 0, cachedTokens = 0, thoughtTokens = 0;
+  let totalCost = 0;
+  let llmCount = 0;
+
+  for (const s of selected) {
+    const provider = detectLLMProvider(s);
+    if (!provider || s.responseStatus === 0) continue;
+    try {
+      let res: any;
+      if (isStreamingResponse(s.responseBody)) {
+        if (provider === "openai") res = parseOpenAIStream(s.responseBody);
+        else if (provider === "anthropic") res = parseAnthropicStream(s.responseBody);
+        else res = JSON.parse(s.responseBody);
+      } else {
+        res = JSON.parse(s.responseBody);
+      }
+
+      let p = 0, r = 0, c = 0, t = 0, model = "unknown";
+      if (provider === "gemini") {
+        const u = res.usageMetadata ?? {};
+        p = u.promptTokenCount ?? 0; r = u.candidatesTokenCount ?? 0;
+        c = u.cachedContentTokenCount ?? 0; t = u.thoughtsTokenCount ?? 0;
+        model = res.modelVersion ?? "unknown";
+      } else if (provider === "anthropic") {
+        const u = res.usage ?? {};
+        p = u.input_tokens ?? 0; r = u.output_tokens ?? 0;
+        c = u.cache_read_input_tokens ?? 0;
+        const req = JSON.parse(s.requestBody);
+        model = res.model ?? req.model ?? "unknown";
+      } else if (provider === "openai") {
+        const u = res.usage ?? {};
+        p = u.prompt_tokens ?? 0; r = u.completion_tokens ?? 0;
+        c = (u.prompt_tokens_details ?? {}).cached_tokens ?? 0;
+        const req = JSON.parse(s.requestBody);
+        model = res.model ?? req.model ?? "unknown";
+      }
+
+      promptTokens  += p; responseTokens += r;
+      cachedTokens  += c; thoughtTokens  += t;
+      const cost = calcCost(provider, model, p, r, c, t);
+      if (cost) totalCost += cost.total;
+      llmCount++;
+    } catch { /* skip */ }
+  }
+
+  return { count: selected.length, llmCount, promptTokens, responseTokens, cachedTokens, thoughtTokens, totalCost };
+});
 
 function selectSessions(ids: string[]) {
   selectedIds.value = ids;
@@ -219,11 +273,21 @@ onMounted(async () => {
         @add-auto-response="handleAddAutoResponse"
       />
       <div v-else class="detail-placeholder">
-        {{
-          selectedIds.length > 1
-            ? `${selectedIds.length} requests selected`
-            : "Select a request to inspect"
-        }}
+        <template v-if="selectionStats">
+          <div class="sel-count">{{ selectionStats.count }} requests selected</div>
+          <template v-if="selectionStats.llmCount > 0">
+            <div class="sel-tokens">
+              <span title="Input tokens">↑ {{ selectionStats.promptTokens.toLocaleString() }}</span>
+              <span v-if="selectionStats.cachedTokens" title="Cached tokens">💾 {{ selectionStats.cachedTokens.toLocaleString() }}</span>
+              <span v-if="selectionStats.thoughtTokens" title="Thinking tokens">💭 {{ selectionStats.thoughtTokens.toLocaleString() }}</span>
+              <span title="Output tokens">↓ {{ selectionStats.responseTokens.toLocaleString() }}</span>
+            </div>
+            <div v-if="selectionStats.totalCost > 0" class="sel-cost">
+              {{ formatCost({ total: selectionStats.totalCost, inputCost: 0, outputCost: 0, cachedCost: 0 }) }}
+            </div>
+          </template>
+        </template>
+        <template v-else>Select a request to inspect</template>
       </div>
     </div>
 
@@ -402,8 +466,30 @@ header small {
   padding: 40px;
   text-align: center;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 10px;
+}
+
+.sel-count {
+  color: #858585;
+  font-size: 13px;
+}
+
+.sel-tokens {
+  display: flex;
+  gap: 12px;
+  color: #9cdcfe;
+  font-size: 13px;
+  font-family: "Cascadia Code", "Fira Code", monospace;
+}
+
+.sel-cost {
+  color: #4ec9b0;
+  font-size: 20px;
+  font-weight: 600;
+  font-family: "Cascadia Code", "Fira Code", monospace;
 }
 
 .tab-bar {

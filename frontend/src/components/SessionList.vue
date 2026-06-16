@@ -6,6 +6,7 @@ import { detectLLMProvider } from "../utils/llm-detection";
 import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream } from "../utils/llm-stream-parser";
 import { isElasticsearchRequest, detectESOperation, parseESIndex } from "../utils/es-detection";
 import { isGraphQLRequest, parseGraphQLRequest, getOperationName, getOperationType } from "../utils/graphql-detection";
+import { calcCost, formatCost } from "../utils/llm-cost";
 
 const props = defineProps<{
   sessions: readonly ProxySession[];
@@ -94,7 +95,11 @@ const filteredSessions = computed(() => {
   // Filter by URL text
   const needle = filterText.value.toLowerCase().trim();
   if (needle) {
-    result = result.filter((s) => s.url.toLowerCase().includes(needle));
+    result = result.filter((s) =>
+      s.url.toLowerCase().includes(needle) ||
+      s.requestBody.toLowerCase().includes(needle) ||
+      s.responseBody.toLowerCase().includes(needle)
+    );
   }
   
   return result;
@@ -251,7 +256,7 @@ function isAutoResponse(s: ProxySession) {
 
 // ── Column resize ─────────────────────────────────────────
 
-type ColKey = "method" | "status" | "url" | "tools" | "results" | "dur";
+type ColKey = "method" | "status" | "url" | "tools" | "results" | "dur" | "cost";
 
 const colWidths = ref<Record<ColKey, number>>({
   method: 62,
@@ -260,6 +265,7 @@ const colWidths = ref<Record<ColKey, number>>({
   tools: 130,
   results: 320,
   dur: 56,
+  cost: 80,
 });
 
 function startColResize(col: ColKey, e: MouseEvent) {
@@ -523,6 +529,52 @@ function graphqlPreview(s: ProxySession): string | null {
   const names = ops.map((op) => `${getOperationType(op.query)} ${getOperationName(op) ?? "?"}`);
   return names.join(", ");
 }
+
+function llmCost(s: ProxySession): string | null {
+  const provider = detectLLMProvider(s);
+  if (!provider) return null;
+  try {
+    let res: any;
+    if (isStreamingResponse(s.responseBody)) {
+      if (provider === "openai") res = parseOpenAIStream(s.responseBody);
+      else if (provider === "anthropic") res = parseAnthropicStream(s.responseBody);
+      else res = JSON.parse(s.responseBody);
+    } else {
+      res = JSON.parse(s.responseBody);
+    }
+
+    let promptTokens = 0, responseTokens = 0, cachedTokens = 0, thoughtTokens = 0;
+    let modelVersion = "unknown";
+
+    if (provider === "gemini") {
+      const u = res.usageMetadata ?? {};
+      promptTokens  = u.promptTokenCount ?? 0;
+      responseTokens = u.candidatesTokenCount ?? 0;
+      cachedTokens  = u.cachedContentTokenCount ?? 0;
+      thoughtTokens = u.thoughtsTokenCount ?? 0;
+      modelVersion  = res.modelVersion ?? "unknown";
+    } else if (provider === "anthropic") {
+      const u = res.usage ?? {};
+      promptTokens  = u.input_tokens ?? 0;
+      responseTokens = u.output_tokens ?? 0;
+      cachedTokens  = u.cache_read_input_tokens ?? 0;
+      const req = JSON.parse(s.requestBody);
+      modelVersion  = res.model ?? req.model ?? "unknown";
+    } else if (provider === "openai") {
+      const u = res.usage ?? {};
+      promptTokens  = u.prompt_tokens ?? 0;
+      responseTokens = u.completion_tokens ?? 0;
+      cachedTokens  = (u.prompt_tokens_details ?? {}).cached_tokens ?? 0;
+      const req = JSON.parse(s.requestBody);
+      modelVersion  = res.model ?? req.model ?? "unknown";
+    }
+
+    const cost = calcCost(provider, modelVersion, promptTokens, responseTokens, cachedTokens, thoughtTokens);
+    return cost ? formatCost(cost) : null;
+  } catch {
+    return null;
+  }
+}
 </script>
 
 <template>
@@ -532,7 +584,7 @@ function graphqlPreview(s: ProxySession): string | null {
         <input
           v-model="filterText"
           type="text"
-          placeholder="Filter by URL..."
+          placeholder="Filter by URL, request or response body..."
           class="filter-input"
         />
         <button
@@ -574,6 +626,10 @@ function graphqlPreview(s: ProxySession): string | null {
           </th>
           <th class="col-dur" :style="{ width: colWidths.dur + 'px' }">
             ms
+          </th>
+          <th v-if="llmOnly" class="col-cost" :style="{ width: colWidths.cost + 'px' }">
+            cost
+            <div class="col-resize-handle" @mousedown="startColResize('cost', $event)" />
           </th>
         </tr>
       </thead>
@@ -623,6 +679,7 @@ function graphqlPreview(s: ProxySession): string | null {
             >{{ r.label }}</span>
           </td>
           <td class="col-dur">{{ s.responseStatus === 0 ? "" : s.durationMs }}</td>
+          <td v-if="llmOnly" class="col-cost">{{ s.responseStatus === 0 ? "" : (llmCost(s) ?? "") }}</td>
         </tr>
       </tbody>
     </table>
@@ -779,6 +836,12 @@ td {
 .col-dur {
   text-align: right;
   color: #858585;
+}
+
+.col-cost {
+  text-align: right;
+  color: #4ec9b0;
+  font-size: 11px;
 }
 
 .GET {
