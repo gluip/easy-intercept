@@ -46,6 +46,14 @@ public class SessionStore
     public ProxySession? Get(Guid id) =>
         _index.TryGetValue(id, out var session) ? session : null;
 
+    public void Update(ProxySession session)
+    {
+        if (!_index.ContainsKey(session.Id)) return;
+        _index[session.Id] = session;
+        if (_files.TryGetValue(session.Id, out var path))
+            File.WriteAllText(path, JsonSerializer.Serialize(session, _json));
+    }
+
     public void Remove(Guid id)
     {
         _index.TryRemove(id, out _);
@@ -69,7 +77,7 @@ public class SessionStore
     }
 
     public IEnumerable<ProxySession> GetAll() =>
-        _queue.Where(s => _index.ContainsKey(s.Id)).Reverse();
+        _queue.Where(s => _index.ContainsKey(s.Id)).Select(s => _index[s.Id]).Reverse();
 
     private static string BuildFileName(int n, ProxySession s)
     {

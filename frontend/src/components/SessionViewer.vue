@@ -128,6 +128,7 @@ const methodClass = computed(() => {
 
 const statusClass = computed(() => {
   const s = props.session.responseStatus;
+  if (s === 0) return "status-pending";
   if (s < 300) return "status-ok";
   if (s < 400) return "status-redirect";
   if (s < 500) return "status-client-err";
@@ -166,8 +167,13 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown));
           :class="['tab-btn', { active: tab === 'response' }]"
           @click="tab = 'response'"
         >
-          <span :class="statusClass">{{ session.responseStatus }}</span>
-          &nbsp;Response · {{ session.durationMs }}ms
+          <template v-if="session.responseStatus === 0">
+            <span :class="statusClass">Pending…</span>
+          </template>
+          <template v-else>
+            <span :class="statusClass">{{ session.responseStatus }}</span>
+            &nbsp;Response · {{ session.durationMs }}ms
+          </template>
         </button>
       </div>
 
@@ -419,6 +425,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown));
 .tab-btn.active {
   color: #d4d4d4;
   border-bottom-color: #007acc;
+}
+
+.status-pending {
+  color: #858585;
 }
 
 .status-ok {

@@ -179,7 +179,9 @@ function formatBodyHtml(body: string): string {
   <div class="detail">
     <h2>{{ session.method }} {{ session.url }}</h2>
     <div class="meta">
-      {{ session.responseStatus }} · {{ session.durationMs }}ms ·
+      <template v-if="session.responseStatus === 0">Pending…</template>
+      <template v-else>{{ session.responseStatus }} · {{ session.durationMs }}ms</template>
+      ·
       {{ new Date(session.timestamp).toLocaleTimeString() }}
     </div>
 
