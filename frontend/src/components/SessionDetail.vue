@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { ref, computed } from "vue";
 import type { ProxySession } from "../types";
 import { isLLMRequest } from "../utils/llm-detection";
 import { isElasticsearchRequest } from "../utils/es-detection";
+import { isGraphQLRequest } from "../utils/graphql-detection";
 import LLMSessionDetail from "./LLMSessionDetail.vue";
 import ElasticsearchSessionDetail from "./ElasticsearchSessionDetail.vue";
+import GraphQLSessionDetail from "./GraphQLSessionDetail.vue";
 import SessionHeaders from "./SessionHeaders.vue";
 
 const props = defineProps<{
@@ -18,6 +20,7 @@ const emit = defineEmits<{
 
 const isLLM = computed(() => isLLMRequest(props.session));
 const isES = computed(() => !isLLM.value && isElasticsearchRequest(props.session));
+const isGraphQL = computed(() => !isLLM.value && !isES.value && isGraphQLRequest(props.session));
 
 function getHeader(headers: Record<string, string>, name: string): string {
   const key = Object.keys(headers).find(k => k.toLowerCase() === name.toLowerCase());
@@ -173,6 +176,61 @@ function formatBodyHtml(body: string): string {
   if (isXml(body)) return highlightXml(formatted);
   return formatted.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
+function headersText(h: Record<string, string>): string {
+  return Object.entries(h)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join("\n");
+}
+
+const copied = ref(false);
+
+function buildRequestResponseText(): string {
+  const s = props.session;
+  return [
+    `${s.method} ${s.url}`,
+    `Status: ${s.responseStatus} · ${s.durationMs}ms`,
+    "",
+    "Request Headers:",
+    "```",
+    headersText(s.requestHeaders) || "(none)",
+    "```",
+    "",
+    "Request Body:",
+    "```",
+    formatBody(s.requestBody),
+    "```",
+    "",
+    "Response Headers:",
+    "```",
+    headersText(s.responseHeaders) || "(none)",
+    "```",
+    "",
+    "Response Body:",
+    "```",
+    formatBody(s.responseBody),
+    "```",
+  ].join("\n");
+}
+
+function copyRequestResponse() {
+  navigator.clipboard.writeText(buildRequestResponseText());
+  copied.value = true;
+  setTimeout(() => (copied.value = false), 1500);
+}
+
+function downloadRequestResponse() {
+  const s = props.session;
+  const blob = new Blob([buildRequestResponseText()], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const safeHost = new URL(s.url).hostname.replace(/[^a-z0-9.-]/gi, "_");
+  const timestamp = new Date(s.timestamp).toISOString().replace(/[:.]/g, "-");
+  a.href = url;
+  a.download = `${s.method}_${safeHost}_${timestamp}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 </script>
 
 <template>
@@ -189,6 +247,12 @@ function formatBodyHtml(body: string): string {
       <button class="ar-btn" @click="emit('addAutoResponse', session)">
         ⚡ Add to Auto Responder
       </button>
+      <button class="copy-btn" @click="copyRequestResponse">
+        {{ copied ? "✓ Copied" : "📋 Copy Request/Response" }}
+      </button>
+      <button class="copy-btn" @click="downloadRequestResponse">
+        ⬇ Download
+      </button>
     </div>
 
     <!-- LLM request viewer -->
@@ -202,6 +266,13 @@ function formatBodyHtml(body: string): string {
     <ElasticsearchSessionDetail
       v-else-if="isES"
       :session="session"
+    />
+
+    <!-- GraphQL viewer -->
+    <GraphQLSessionDetail
+      v-else-if="isGraphQL"
+      :session="session"
+      @open-viewer="(s, t) => emit('openViewer', s, t)"
     />
 
     <!-- Standard request viewer -->
@@ -280,6 +351,16 @@ pre {
 }
 .ar-btn:hover {
   background: #dcdcaa;
+  color: #1e1e1e;
+}
+
+.copy-btn {
+  background: #1e2a3f;
+  color: #569cd6;
+  border-color: #569cd6;
+}
+.copy-btn:hover {
+  background: #569cd6;
   color: #1e1e1e;
 }
 

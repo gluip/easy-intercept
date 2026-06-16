@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import type { ProxySession } from "../types";
-import ContextMenu from "./ContextMenu.vue";
+import ContextMenu, { type MenuItem } from "./ContextMenu.vue";
 import { detectLLMProvider } from "../utils/llm-detection";
 import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream } from "../utils/llm-stream-parser";
 import { isElasticsearchRequest, detectESOperation, parseESIndex } from "../utils/es-detection";
+import { isGraphQLRequest, parseGraphQLRequest, getOperationName, getOperationType } from "../utils/graphql-detection";
 
 const props = defineProps<{
   sessions: readonly ProxySession[];
@@ -16,6 +17,7 @@ const emit = defineEmits<{
   copyUrl: [session: ProxySession];
   replay: [session: ProxySession];
   deleteSelected: [ids: string[]];
+  compare: [ids: [string, string]];
 }>();
 
 const listEl = ref<HTMLElement>();
@@ -26,6 +28,58 @@ const llmOnly = ref(false);
 const ctxMenu = ref<{ session: ProxySession; x: number; y: number } | null>(
   null,
 );
+
+// Mark colours — persisted per session id
+const MARK_COLORS = [
+  { name: "Red", value: "#f44747" },
+  { name: "Orange", value: "#dc8a3a" },
+  { name: "Yellow", value: "#dcdcaa" },
+  { name: "Green", value: "#4ec9b0" },
+  { name: "Blue", value: "#569cd6" },
+  { name: "Purple", value: "#c586c0" },
+  { name: "Clear", value: "" },
+];
+
+const MARKS_KEY = "easyintercept.marks";
+
+function loadMarks(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(MARKS_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+const marks = ref<Record<string, string>>(loadMarks());
+
+function setMark(id: string, color: string) {
+  if (color) marks.value[id] = color;
+  else delete marks.value[id];
+  localStorage.setItem(MARKS_KEY, JSON.stringify(marks.value));
+}
+
+function markColor(s: ProxySession): string | null {
+  return marks.value[s.id] || null;
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function rowStyle(s: ProxySession): Record<string, string> {
+  const style: Record<string, string> = {};
+  const mc = markColor(s);
+  const cc = convColor(s);
+  const shadows: string[] = [];
+  if (mc) shadows.push(`inset 4px 0 0 ${mc}`);
+  else if (cc) shadows.push(`inset 3px 0 0 ${cc}`);
+  if (shadows.length) style.boxShadow = shadows.join(", ");
+  if (mc) style.backgroundColor = hexToRgba(mc, 0.35);
+  return style;
+}
 
 const selectedSet = computed(() => new Set(props.selectedIds));
 
@@ -46,11 +100,18 @@ const filteredSessions = computed(() => {
   return result;
 });
 
-const menuItems = [
-  { label: "Copy URL", icon: "📋", action: "copy-url" },
-  { label: "Replay", icon: "🔁", action: "replay" },
-  { label: "Delete", icon: "🗑️", action: "delete" },
-];
+const menuItems = computed(() => {
+  const items: MenuItem[] = [
+    { label: "Copy URL", icon: "📋", action: "copy-url" },
+    { label: "Replay", icon: "🔁", action: "replay" },
+    { label: "Mark", icon: "🎨", action: "mark", colors: MARK_COLORS },
+    { label: "Delete", icon: "🗑️", action: "delete" },
+  ];
+  if (props.selectedIds.length === 2) {
+    items.splice(3, 0, { label: "Compare", icon: "⚖️", action: "compare" });
+  }
+  return items;
+});
 
 function handleClick(e: MouseEvent, session: ProxySession) {
   const meta = e.metaKey || e.ctrlKey;
@@ -104,6 +165,13 @@ function onMenuSelect(action: string) {
   if (action === "copy-url") emit("copyUrl", session);
   else if (action === "replay") emit("replay", session);
   else if (action === "delete") emit("deleteSelected", [...props.selectedIds]);
+  else if (action === "compare" && props.selectedIds.length === 2)
+    emit("compare", [props.selectedIds[0], props.selectedIds[1]]);
+  else if (action.startsWith("mark:")) {
+    const color = action.slice("mark:".length);
+    const ids = props.selectedIds.includes(session.id) ? props.selectedIds : [session.id];
+    ids.forEach((id) => setMark(id, color));
+  }
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -447,17 +515,35 @@ function esPreview(s: ProxySession): string | null {
   } catch { /* fall through */ }
   return idx ? `${op}  ·  ${idx}` : null;
 }
+
+function graphqlPreview(s: ProxySession): string | null {
+  if (!isGraphQLRequest(s)) return null;
+  const ops = parseGraphQLRequest(s);
+  if (!ops || ops.length === 0) return null;
+  const names = ops.map((op) => `${getOperationType(op.query)} ${getOperationName(op) ?? "?"}`);
+  return names.join(", ");
+}
 </script>
 
 <template>
   <div ref="listEl" class="session-list" tabindex="0">
     <div class="filter-bar">
-      <input
-        v-model="filterText"
-        type="text"
-        placeholder="Filter by URL..."
-        class="filter-input"
-      />
+      <div class="filter-input-wrap">
+        <input
+          v-model="filterText"
+          type="text"
+          placeholder="Filter by URL..."
+          class="filter-input"
+        />
+        <button
+          v-if="filterText"
+          class="filter-clear"
+          title="Clear filter"
+          @click="filterText = ''"
+        >
+          ✕
+        </button>
+      </div>
       <label class="llm-filter">
         <input v-model="llmOnly" type="checkbox" />
         <span>LLM requests only</span>
@@ -497,7 +583,7 @@ function esPreview(s: ProxySession): string | null {
           :key="s.id"
           :data-id="s.id"
           :class="{ selected: selectedSet.has(s.id) }"
-          :style="convColor(s) ? { boxShadow: `inset 3px 0 0 ${convColor(s)}` } : {}"
+          :style="rowStyle(s)"
           @click="handleClick($event, s)"
           @contextmenu="onContextMenu($event, s)"
         >
@@ -517,6 +603,7 @@ function esPreview(s: ProxySession): string | null {
             >
             <span v-if="llmPreview(s)" class="llm-preview">{{ llmPreview(s) }}</span>
             <span v-else-if="esPreview(s)" class="es-preview">{{ esPreview(s) }}</span>
+            <span v-else-if="graphqlPreview(s)" class="gql-preview">{{ graphqlPreview(s) }}</span>
             <span v-else>{{ s.url }}</span>
           </td>
           <td v-if="llmOnly" class="col-tools">
@@ -580,15 +667,39 @@ function esPreview(s: ProxySession): string | null {
   align-items: center;
 }
 
+.filter-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+}
+
 .filter-input {
   flex: 1;
   background: #3c3c3c;
   border: 1px solid #3e3e42;
   color: #cccccc;
-  padding: 6px 10px;
+  padding: 6px 28px 6px 10px;
   font-size: 12px;
   border-radius: 4px;
   outline: none;
+  width: 100%;
+}
+
+.filter-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #858585;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  line-height: 1;
+}
+.filter-clear:hover {
+  color: #d4d4d4;
 }
 
 .filter-input:focus {
@@ -746,6 +857,11 @@ td {
 
 .es-preview {
   color: #4ec9b0;
+  font-style: italic;
+}
+
+.gql-preview {
+  color: #9cdcfe;
   font-style: italic;
 }
 

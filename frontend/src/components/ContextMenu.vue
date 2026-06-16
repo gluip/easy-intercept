@@ -5,6 +5,7 @@ export interface MenuItem {
   label: string;
   icon?: string;
   action: string;
+  colors?: { name: string; value: string }[];
 }
 
 const props = defineProps<{
@@ -45,15 +46,29 @@ onUnmounted(() => {
     class="context-menu"
     :style="{ left: props.x + 'px', top: props.y + 'px' }"
   >
-    <div
-      v-for="item in items"
-      :key="item.action"
-      class="menu-item"
-      @click="handleClick(item.action)"
-    >
-      <span v-if="item.icon" class="menu-icon">{{ item.icon }}</span>
-      {{ item.label }}
-    </div>
+    <template v-for="item in items" :key="item.action">
+      <div v-if="item.colors" class="menu-item colors-item">
+        <span v-if="item.icon" class="menu-icon">{{ item.icon }}</span>
+        {{ item.label }}
+        <div class="color-swatches">
+          <button
+            v-for="c in item.colors"
+            :key="c.name"
+            class="swatch"
+            :class="{ 'swatch-clear': c.value === '' }"
+            :style="c.value ? { background: c.value } : {}"
+            :title="c.name"
+            @click="handleClick(`${item.action}:${c.value}`)"
+          >
+            <span v-if="c.value === ''">✕</span>
+          </button>
+        </div>
+      </div>
+      <div v-else class="menu-item" @click="handleClick(item.action)">
+        <span v-if="item.icon" class="menu-icon">{{ item.icon }}</span>
+        {{ item.label }}
+      </div>
+    </template>
   </div>
 </template>
 
@@ -87,5 +102,40 @@ onUnmounted(() => {
   width: 16px;
   text-align: center;
   font-size: 13px;
+}
+
+.colors-item {
+  cursor: default;
+}
+.colors-item:hover {
+  background: none;
+}
+
+.color-swatches {
+  display: flex;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid #3e3e42;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: #858585;
+  line-height: 1;
+}
+.swatch:hover {
+  border-color: #d4d4d4;
+  transform: scale(1.15);
+}
+.swatch-clear {
+  background: #2d2d30;
 }
 </style>
