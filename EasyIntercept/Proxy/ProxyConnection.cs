@@ -185,6 +185,26 @@ public class ProxyConnection
 
         var startTime = DateTime.UtcNow;
 
+        // Send a pending session immediately so the request shows up before the response arrives
+        var requestBodyForSession = (actualBody.Length > 0 && isReqText)
+            ? Encoding.UTF8.GetString(actualBody)
+            : (actualBody.Length > 0 ? $"[{actualBody.Length} bytes binary]" : "");
+
+        var pendingSession = new ProxySession
+        {
+            Timestamp = startTime,
+            Method = method,
+            Url = url,
+            RequestHeaders = reqHeaders,
+            RequestBody = requestBodyForSession,
+            ResponseStatus = 0,
+            ResponseHeaders = new(),
+            ResponseBody = "",
+            DurationMs = 0,
+        };
+        _sessions.Add(pendingSession);
+        await _hub.Clients.All.SendAsync("NewSession", pendingSession);
+
         // Auto-responder check — runs before any upstream request
         var requestBodyText = actualBody.Length > 0 ? Encoding.UTF8.GetString(actualBody) : "";
         var match = _autoResponder.FindMatch(method, url, requestBodyText);
@@ -224,23 +244,16 @@ public class ProxyConnection
                 ["Content-Length"] = bodyBytes.Length.ToString()
             };
 
-            var session = new ProxySession
+            var session = pendingSession with
             {
-                Timestamp = startTime,
-                Method = method,
-                Url = url,
-                RequestHeaders = reqHeaders,
-                RequestBody = (actualBody.Length > 0 && isReqText)
-                    ? Encoding.UTF8.GetString(actualBody)
-                    : (actualBody.Length > 0 ? $"[{actualBody.Length} bytes binary]" : ""),
                 ResponseStatus = match.ResponseStatus,
                 ResponseHeaders = fakeRespHeaders,
                 ResponseBody = match.ResponseBody,
                 DurationMs = match.LatencyMs,
             };
 
-            _sessions.Add(session);
-            await _hub.Clients.All.SendAsync("NewSession", session);
+            _sessions.Update(session);
+            await _hub.Clients.All.SendAsync("UpdateSession", session);
             return;
         }
 
@@ -278,6 +291,19 @@ public class ProxyConnection
             var errBody = Encoding.UTF8.GetBytes(ex.Message);
             await WriteRaw(stream, $"HTTP/1.1 502 Bad Gateway\r\nContent-Length: {errBody.Length}\r\nConnection: close\r\n\r\n");
             await stream.WriteAsync(errBody);
+
+            var errSession = pendingSession with
+            {
+                ResponseStatus = 502,
+                ResponseHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Content-Length"] = errBody.Length.ToString(),
+                },
+                ResponseBody = ex.Message,
+                DurationMs = sw.ElapsedMilliseconds,
+            };
+            _sessions.Update(errSession);
+            await _hub.Clients.All.SendAsync("UpdateSession", errSession);
             return;
         }
 
@@ -310,10 +336,26 @@ public class ProxyConnection
             await stream.WriteAsync(respBody);
 
             // Log session
-            var isText = respBody.Length == 0
+            respHeaders.TryGetValue("Content-Type", out var rct);
+            rct ??= "";
+            var rctLower = rct.ToLowerInvariant();
+            var isImageType = rctLower.StartsWith("image/") && !rctLower.Contains("svg");
+            var isText = !isImageType && (
+                respBody.Length == 0
                 || respBody.Length <= 4096
-                || (respHeaders.TryGetValue("Content-Type", out var rct)
-                    && (rct.Contains("text/") || rct.Contains("json") || rct.Contains("xml") || rct.Contains("javascript")));
+                || rctLower.Contains("text/")
+                || rctLower.Contains("json")
+                || rctLower.Contains("xml")
+                || rctLower.Contains("javascript"));
+
+            const int MaxImageBytes = 5 * 1024 * 1024;
+            string responseBodyStr;
+            if (isImageType && respBody.Length > 0 && respBody.Length <= MaxImageBytes)
+                responseBodyStr = $"data:{rct};base64,{Convert.ToBase64String(respBody)}";
+            else if (isImageType)
+                responseBodyStr = $"[{respBody.Length} bytes image]";
+            else
+                responseBodyStr = isText ? Encoding.UTF8.GetString(respBody) : $"[{respBody.Length} bytes]";
 
             var sessionHeaders = respHeaders
                 .Where(h => !h.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase)
@@ -321,22 +363,16 @@ public class ProxyConnection
                 .ToDictionary(h => h.Key, h => h.Value, StringComparer.OrdinalIgnoreCase);
             sessionHeaders["Content-Length"] = respBody.Length.ToString();
 
-            var session = new ProxySession
+            var session = pendingSession with
             {
-                Timestamp = startTime,
-                Method = method,
-                Url = url,
-                RequestHeaders = reqHeaders,
-                RequestBody = (actualBody.Length > 0 && isReqText) ? Encoding.UTF8.GetString(actualBody)
-                    : (actualBody.Length > 0 ? $"[{actualBody.Length} bytes binary]" : ""),
                 ResponseStatus = (int)upstream.StatusCode,
                 ResponseHeaders = sessionHeaders,
-                ResponseBody = isText ? Encoding.UTF8.GetString(respBody) : $"[{respBody.Length} bytes]",
+                ResponseBody = responseBodyStr,
                 DurationMs = sw.ElapsedMilliseconds,
             };
 
-            _sessions.Add(session);
-            await _hub.Clients.All.SendAsync("NewSession", session);
+            _sessions.Update(session);
+            await _hub.Clients.All.SendAsync("UpdateSession", session);
         }
     }
 

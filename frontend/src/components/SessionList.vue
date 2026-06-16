@@ -238,6 +238,7 @@ function methodClass(m: string) {
 }
 
 function statusClass(s: number) {
+  if (s === 0) return "pending";
   if (s >= 500) return "s5";
   if (s >= 400) return "s4";
   if (s >= 300) return "s3";
@@ -590,7 +591,8 @@ function graphqlPreview(s: ProxySession): string | null {
             {{ s.method }}
           </td>
           <td class="col-status" :class="statusClass(s.responseStatus)">
-            {{ s.responseStatus }}
+            <span v-if="s.responseStatus === 0" class="pending-dots">···</span>
+            <template v-else>{{ s.responseStatus }}</template>
           </td>
           <td class="col-url" :title="s.url">
             <span
@@ -620,7 +622,7 @@ function graphqlPreview(s: ProxySession): string | null {
               :title="r.snippet"
             >{{ r.label }}</span>
           </td>
-          <td class="col-dur">{{ s.durationMs }}</td>
+          <td class="col-dur">{{ s.responseStatus === 0 ? "" : s.durationMs }}</td>
         </tr>
       </tbody>
     </table>
@@ -793,6 +795,20 @@ td {
 }
 .PATCH {
   color: #c586c0;
+}
+
+.pending {
+  color: #858585;
+}
+
+.pending-dots {
+  display: inline-block;
+  animation: pending-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pending-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
 }
 
 .s2 {

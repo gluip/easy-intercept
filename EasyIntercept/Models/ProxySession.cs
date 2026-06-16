@@ -1,6 +1,6 @@
 namespace EasyIntercept.Models;
 
-public class ProxySession
+public record ProxySession
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;

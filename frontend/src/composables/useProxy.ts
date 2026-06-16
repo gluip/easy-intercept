@@ -20,6 +20,12 @@ connection.on("NewSession", (s: ProxySession) => {
   sessions.value.unshift(s);
 });
 
+connection.on("UpdateSession", (s: ProxySession) => {
+  const idx = sessions.value.findIndex((x) => x.id === s.id);
+  if (idx >= 0) sessions.value[idx] = s;
+  else sessions.value.unshift(s);
+});
+
 connection.onreconnected(() => (connected.value = true));
 connection.onclose(() => (connected.value = false));
 
