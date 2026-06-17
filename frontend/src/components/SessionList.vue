@@ -796,6 +796,7 @@ table {
   border-collapse: collapse;
   font-size: 12px;
   table-layout: fixed;
+  user-select: none;
 }
 
 thead th {

@@ -144,6 +144,10 @@ function handleCompare(ids: [string, string]) {
   if (a && b) comparePair.value = [a, b];
 }
 
+function handleCopyUrl(session: ProxySession) {
+  navigator.clipboard.writeText(session.url);
+}
+
 function openViewer(session: ProxySession, tab: "request" | "response") {
   viewerSession.value = session;
   viewerTab.value = tab;
@@ -269,6 +273,7 @@ onMounted(async () => {
           @replay="handleReplay"
           @delete-selected="handleDeleteSelected"
           @compare="handleCompare"
+          @copy-url="handleCopyUrl"
         />
       </div>
       <div class="divider" @mousedown.prevent="startDrag" />

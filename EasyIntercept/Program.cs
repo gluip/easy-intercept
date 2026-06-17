@@ -10,7 +10,8 @@ builder.WebHost.UseUrls("http://*:8080");
 
 builder.Services.AddSignalR();
 
-builder.Services.AddHttpClient("proxy").ConfigurePrimaryHttpMessageHandler(() =>
+builder.Services.AddHttpClient("proxy", c => c.Timeout = Timeout.InfiniteTimeSpan)
+    .ConfigurePrimaryHttpMessageHandler(() =>
     new HttpClientHandler
     {
         AllowAutoRedirect = false,
