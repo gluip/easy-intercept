@@ -108,12 +108,14 @@ const filteredSessions = computed(() => {
 const menuItems = computed(() => {
   const items: MenuItem[] = [
     { label: "Copy URL", icon: "📋", action: "copy-url" },
+    { label: "Copy file path", icon: "📄", action: "copy-file-path" },
+    { label: "Show in Explorer", icon: "📂", action: "show-in-explorer" },
     { label: "Replay", icon: "🔁", action: "replay" },
     { label: "Mark", icon: "🎨", action: "mark", colors: MARK_COLORS },
     { label: "Delete", icon: "🗑️", action: "delete" },
   ];
   if (props.selectedIds.length === 2) {
-    items.splice(3, 0, { label: "Compare", icon: "⚖️", action: "compare" });
+    items.splice(5, 0, { label: "Compare", icon: "⚖️", action: "compare" });
   }
   return items;
 });
@@ -168,6 +170,15 @@ function onMenuSelect(action: string) {
   const session = ctxMenu.value.session;
   ctxMenu.value = null;
   if (action === "copy-url") emit("copyUrl", session);
+  else if (action === "copy-file-path") {
+    fetch(`/api/sessions/${session.id}/file-path`)
+      .then((r) => r.json())
+      .then((d) => navigator.clipboard.writeText(d.path))
+      .catch(() => {});
+  }
+  else if (action === "show-in-explorer") {
+    fetch(`/api/sessions/${session.id}/show-in-explorer`, { method: "POST" }).catch(() => {});
+  }
   else if (action === "replay") emit("replay", session);
   else if (action === "delete") emit("deleteSelected", [...props.selectedIds]);
   else if (action === "compare" && props.selectedIds.length === 2)

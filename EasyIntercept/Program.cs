@@ -77,6 +77,26 @@ app.MapPost("/api/sessions/{id:guid}/replay", async (Guid id, SessionStore store
     return Results.Ok(new { status = (int)resp.StatusCode, body });
 });
 
+app.MapGet("/api/sessions/{id:guid}/file-path", (Guid id, SessionStore store) =>
+{
+    var path = store.GetFilePath(id);
+    if (path is null) return Results.NotFound();
+    return Results.Ok(new { path });
+});
+
+app.MapPost("/api/sessions/{id:guid}/show-in-explorer", (Guid id, SessionStore store) =>
+{
+    var path = store.GetFilePath(id);
+    if (path is null || !File.Exists(path)) return Results.NotFound();
+    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+    {
+        FileName = "explorer.exe",
+        Arguments = $"/select,\"{path}\"",
+        UseShellExecute = true,
+    });
+    return Results.Ok();
+});
+
 app.MapGet("/api/auto-responders", (AutoResponderStore store) =>
     Results.Ok(store.GetAll()));
 
