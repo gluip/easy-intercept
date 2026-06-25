@@ -79,6 +79,9 @@ public class SessionStore
     public IEnumerable<ProxySession> GetAll() =>
         _queue.Where(s => _index.ContainsKey(s.Id)).Select(s => _index[s.Id]).Reverse();
 
+    public string? GetFilePath(Guid id) =>
+        _files.TryGetValue(id, out var path) ? path : null;
+
     private static string BuildFileName(int n, ProxySession s)
     {
         var uri = new Uri(s.Url);
