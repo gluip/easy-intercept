@@ -301,7 +301,7 @@ function downloadRequestResponse() {
 
 <style scoped>
 .detail {
-  width: 50%;
+  width: 100%;
   overflow-y: auto;
   padding: 14px 16px;
   font-size: 12px;
