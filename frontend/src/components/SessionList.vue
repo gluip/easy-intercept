@@ -27,6 +27,7 @@ const lastClickedId = ref<string | null>(null);
 const filterText = ref("");
 const llmOnly = ref(false);
 const kindFilter = ref<RequestKind | "all">("all");
+const timelineMode = ref(false);
 
 const ctxMenu = ref<{ session: ProxySession; x: number; y: number } | null>(
   null,
@@ -109,9 +110,41 @@ const filteredSessions = computed(() => {
       s.responseBody.toLowerCase().includes(needle)
     );
   }
-  
+
+  // Chronological order in timeline mode — newest on top, oldest at the
+  // bottom, matching the default (non-timeline) list order so the rows
+  // don't visually flip when the toggle is switched on.
+  if (timelineMode.value) {
+    result = [...result].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    );
+  }
+
   return result;
 });
+
+const timelineRange = computed(() => {
+  if (!timelineMode.value || filteredSessions.value.length === 0) return null;
+  const starts = filteredSessions.value.map((s) => new Date(s.timestamp).getTime());
+  const ends = filteredSessions.value.map((s) => {
+    const start = new Date(s.timestamp).getTime();
+    const dur = s.responseStatus === 0 ? Date.now() - start : s.durationMs;
+    return start + Math.max(dur, 0);
+  });
+  const min = Math.min(...starts);
+  const max = Math.max(...ends);
+  return { min, span: Math.max(max - min, 1) };
+});
+
+function timelineBarStyle(s: ProxySession): Record<string, string> {
+  const range = timelineRange.value;
+  if (!range) return {};
+  const start = new Date(s.timestamp).getTime();
+  const dur = s.responseStatus === 0 ? Date.now() - start : s.durationMs;
+  const left = ((start - range.min) / range.span) * 100;
+  const width = Math.max((Math.max(dur, 0) / range.span) * 100, 0.5);
+  return { left: left + "%", width: width + "%" };
+}
 
 const menuItems = computed(() => {
   const items: MenuItem[] = [
@@ -275,7 +308,7 @@ function isAutoResponse(s: ProxySession) {
 
 // ── Column resize ─────────────────────────────────────────
 
-type ColKey = "method" | "status" | "url" | "tools" | "results" | "dur" | "cost";
+type ColKey = "method" | "status" | "url" | "tools" | "results" | "dur" | "cost" | "timeline";
 
 const colWidths = ref<Record<ColKey, number>>({
   method: 62,
@@ -285,6 +318,7 @@ const colWidths = ref<Record<ColKey, number>>({
   results: 320,
   dur: 56,
   cost: 80,
+  timeline: 160,
 });
 
 function startColResize(col: ColKey, e: MouseEvent) {
@@ -637,6 +671,10 @@ function llmCost(s: ProxySession): string | null {
           {{ REQUEST_KIND_ICONS[k] }} {{ REQUEST_KIND_LABELS[k] }}
         </option>
       </select>
+      <label class="llm-filter">
+        <input v-model="timelineMode" type="checkbox" />
+        <span>⏱ Timeline</span>
+      </label>
     </div>
     <table>
       <thead>
@@ -667,6 +705,10 @@ function llmCost(s: ProxySession): string | null {
           <th v-if="llmOnly" class="col-cost" :style="{ width: colWidths.cost + 'px' }">
             cost
             <div class="col-resize-handle" @mousedown="startColResize('cost', $event)" />
+          </th>
+          <th v-if="timelineMode" class="col-timeline" :style="{ width: colWidths.timeline + 'px' }">
+            Timeline
+            <div class="col-resize-handle" @mousedown="startColResize('timeline', $event)" />
           </th>
         </tr>
       </thead>
@@ -723,6 +765,16 @@ function llmCost(s: ProxySession): string | null {
           </td>
           <td class="col-dur">{{ s.responseStatus === 0 ? "" : s.durationMs }}</td>
           <td v-if="llmOnly" class="col-cost">{{ s.responseStatus === 0 ? "" : (llmCost(s) ?? "") }}</td>
+          <td v-if="timelineMode" class="col-timeline">
+            <div class="timeline-track">
+              <span
+                class="timeline-bar"
+                :class="'kind-' + detectRequestKind(s)"
+                :style="timelineBarStyle(s)"
+                :title="`${new Date(s.timestamp).toLocaleTimeString()} · ${s.responseStatus === 0 ? 'pending' : s.durationMs + 'ms'}`"
+              />
+            </div>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -962,6 +1014,33 @@ td {
 
 .kind-badge.kind-asset {
   opacity: 0.5;
+}
+
+.timeline-track {
+  position: relative;
+  height: 14px;
+  background: #1e1e1e;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.timeline-bar {
+  position: absolute;
+  top: 1px;
+  height: 12px;
+  border-radius: 2px;
+  min-width: 2px;
+}
+.timeline-bar.kind-document {
+  background: #569cd6;
+}
+.timeline-bar.kind-asset {
+  background: #6a6a6a;
+}
+.timeline-bar.kind-browser-api {
+  background: #4ec9b0;
+}
+.timeline-bar.kind-backend {
+  background: #dc8a3a;
 }
 
 .col-resize-handle {
