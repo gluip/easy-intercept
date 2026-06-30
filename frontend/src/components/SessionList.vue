@@ -7,6 +7,7 @@ import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopi
 import { isElasticsearchRequest, detectESOperation, parseESIndex } from "../utils/es-detection";
 import { isGraphQLRequest, parseGraphQLRequest, getOperationName, getOperationType } from "../utils/graphql-detection";
 import { calcCost, formatCost } from "../utils/llm-cost";
+import { detectRequestKind, REQUEST_KIND_LABELS, REQUEST_KIND_ICONS, type RequestKind } from "../utils/request-kind-detection";
 
 const props = defineProps<{
   sessions: readonly ProxySession[];
@@ -25,6 +26,7 @@ const listEl = ref<HTMLElement>();
 const lastClickedId = ref<string | null>(null);
 const filterText = ref("");
 const llmOnly = ref(false);
+const kindFilter = ref<RequestKind | "all">("all");
 
 const ctxMenu = ref<{ session: ProxySession; x: number; y: number } | null>(
   null,
@@ -79,6 +81,7 @@ function rowStyle(s: ProxySession): Record<string, string> {
   else if (cc) shadows.push(`inset 3px 0 0 ${cc}`);
   if (shadows.length) style.boxShadow = shadows.join(", ");
   if (mc) style.backgroundColor = hexToRgba(mc, 0.35);
+  else if (detectRequestKind(s) === "asset") style.opacity = "0.55";
   return style;
 }
 
@@ -91,7 +94,12 @@ const filteredSessions = computed(() => {
   if (llmOnly.value) {
     result = result.filter((s) => detectLLMProvider(s) !== null);
   }
-  
+
+  // Filter by request kind
+  if (kindFilter.value !== "all") {
+    result = result.filter((s) => detectRequestKind(s) === kindFilter.value);
+  }
+
   // Filter by URL text
   const needle = filterText.value.toLowerCase().trim();
   if (needle) {
@@ -623,6 +631,12 @@ function llmCost(s: ProxySession): string | null {
         <input v-model="llmOnly" type="checkbox" />
         <span>LLM requests only</span>
       </label>
+      <select v-model="kindFilter" class="kind-filter" title="Filter by request type">
+        <option value="all">All types</option>
+        <option v-for="k in (['document', 'asset', 'browser-api', 'backend'] as RequestKind[])" :key="k" :value="k">
+          {{ REQUEST_KIND_ICONS[k] }} {{ REQUEST_KIND_LABELS[k] }}
+        </option>
+      </select>
     </div>
     <table>
       <thead>
@@ -679,6 +693,12 @@ function llmCost(s: ProxySession): string | null {
               class="ar-badge"
               title="Auto Responder"
               >⚡</span
+            >
+            <span
+              class="kind-badge"
+              :class="'kind-' + detectRequestKind(s)"
+              :title="REQUEST_KIND_LABELS[detectRequestKind(s)]"
+              >{{ REQUEST_KIND_ICONS[detectRequestKind(s)] }}</span
             >
             <span v-if="llmPreview(s)" class="llm-preview">{{ llmPreview(s) }}</span>
             <span v-else-if="esPreview(s)" class="es-preview">{{ esPreview(s) }}</span>
@@ -802,6 +822,16 @@ function llmCost(s: ProxySession): string | null {
   cursor: pointer;
 }
 
+.kind-filter {
+  font-size: 12px;
+  color: #cccccc;
+  background: #1e1e1e;
+  border: 1px solid #3e3e42;
+  border-radius: 3px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -922,6 +952,16 @@ td {
 .ar-badge {
   margin-right: 4px;
   font-size: 11px;
+}
+
+.kind-badge {
+  margin-right: 4px;
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.kind-badge.kind-asset {
+  opacity: 0.5;
 }
 
 .col-resize-handle {
