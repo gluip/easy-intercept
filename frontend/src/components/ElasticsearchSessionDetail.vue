@@ -23,9 +23,23 @@ const filters = computed(() =>
 
 const hits = computed(() => respBody.value?.hits?.hits ?? []);
 const totalHits = computed(() => respBody.value?.hits?.total?.value ?? null);
+const maxScore = computed(() => respBody.value?.hits?.max_score ?? null);
 const took = computed(() => respBody.value?.took ?? null);
 const shards = computed(() => respBody.value?._shards ?? null);
 const timedOut = computed(() => respBody.value?.timed_out ?? false);
+
+const copied = ref(false);
+function copyQuery() {
+  const body = reqBody.value;
+  if (!body) return;
+  let path = "";
+  try { path = new URL(props.session.url).pathname; } catch { path = props.session.url; }
+  const text = `${props.session.method} ${path}\n${JSON.stringify(body, null, 2)}`;
+  navigator.clipboard.writeText(text).then(() => {
+    copied.value = true;
+    setTimeout(() => (copied.value = false), 1500);
+  });
+}
 
 const expandedHits = ref<Set<string>>(new Set());
 function toggleHit(id: string) {
@@ -74,6 +88,9 @@ function sourceEntries(source: Record<string, unknown>): [string, string][] {
         <span class="stat" v-if="took !== null">
           <span class="stat-val">{{ took }}ms</span> ES
         </span>
+        <span class="stat" v-if="maxScore !== null">
+          <span class="stat-val">{{ (maxScore as number).toFixed(4) }}</span> max score
+        </span>
         <span class="stat" v-if="shards">
           <span class="stat-val">{{ shards.successful }}/{{ shards.total }}</span> shards
         </span>
@@ -94,7 +111,12 @@ function sourceEntries(source: Record<string, unknown>): [string, string][] {
     <!-- Search detail -->
     <template v-if="operation === 'search' && reqBody">
       <div class="section">
-        <div class="section-title">Query</div>
+        <div class="section-title">
+          Query
+          <button class="copy-query-btn" @click.stop="copyQuery" :title="copied ? 'Copied!' : 'Copy request body'">
+            {{ copied ? '✓ Copied' : '📋 Copy' }}
+          </button>
+        </div>
         <div class="filter-list" v-if="filters.length">
           <div class="filter-row" v-for="(f, i) in filters" :key="i">
             <span class="filter-type" :class="f.type">{{ f.type }}</span>
@@ -128,6 +150,7 @@ function sourceEntries(source: Record<string, unknown>): [string, string][] {
           >
             <span class="hit-toggle">{{ expandedHits.has(hit._id) ? '▾' : '▸' }}</span>
             <span class="hit-id">{{ hit._id }}</span>
+            <span v-if="hit._score != null" class="hit-score">{{ (hit._score as number).toFixed(4) }}</span>
             <span class="hit-index muted">{{ hit._index }}</span>
             <template v-if="expandedHits.has(hit._id)">
               <div class="hit-source">
@@ -274,10 +297,12 @@ function sourceEntries(source: Record<string, unknown>): [string, string][] {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.filter-type.term    { background: #1e3a2f; color: #4ec9b0; }
-.filter-type.terms   { background: #2d2a1e; color: #dcdcaa; }
-.filter-type.range   { background: #1e2d3a; color: #9cdcfe; }
-.filter-type.match   { background: #2d1e2a; color: #c586c0; }
+.filter-type.term     { background: #1e3a2f; color: #4ec9b0; }
+.filter-type.terms    { background: #2d2a1e; color: #dcdcaa; }
+.filter-type.range    { background: #1e2d3a; color: #9cdcfe; }
+.filter-type.match    { background: #2d1e2a; color: #c586c0; }
+.filter-type.semantic { background: #2a1e3a; color: #b29ae0; }
+.filter-type.knn      { background: #1e2a2d; color: #9cdcfe; }
 
 .filter-field { color: #9cdcfe; }
 .filter-eq    { color: #858585; }
@@ -293,6 +318,21 @@ function sourceEntries(source: Record<string, unknown>): [string, string][] {
 }
 .query-meta strong { color: #d4d4d4; }
 .pit-info { font-family: monospace; font-size: 10px; color: #555; }
+
+.copy-query-btn {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 2px 7px;
+  background: #1e2d3a;
+  color: #9cdcfe;
+  border: 1px solid #2a3a4a;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.copy-query-btn:hover { background: #2a3a4a; }
 
 /* Hits */
 .hits-section { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
@@ -317,6 +357,7 @@ function sourceEntries(source: Record<string, unknown>): [string, string][] {
 
 .hit-toggle { color: #555; width: 10px; flex-shrink: 0; }
 .hit-id { color: #4ec9b0; }
+.hit-score { color: #dcdcaa; font-size: 10px; flex-shrink: 0; }
 .hit-index { font-size: 10px; }
 
 .hit-source {
