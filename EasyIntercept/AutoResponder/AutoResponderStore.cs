@@ -19,12 +19,14 @@ public class AutoResponderRule
     public string BodyMatch { get; set; } = "";
 }
 
-public class AutoResponderStore
+public class AutoResponderStore : IDisposable
 {
     private readonly ConcurrentDictionary<Guid, AutoResponderRule> _rules = new();
     private readonly ConcurrentDictionary<Guid, string> _files = new();
     private readonly string _dir;
     private static readonly JsonSerializerOptions _json = new() { WriteIndented = true };
+    private readonly FileSystemWatcher _watcher;
+    private Timer? _debounceTimer;
 
     public AutoResponderStore(IConfiguration config)
     {
@@ -32,6 +34,52 @@ public class AutoResponderStore
         _dir = Path.IsPathRooted(raw) ? raw : Path.Combine(Directory.GetCurrentDirectory(), raw);
         Directory.CreateDirectory(_dir);
         LoadFromDisk();
+
+        _watcher = new FileSystemWatcher(_dir, "*.json")
+        {
+            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName,
+            IncludeSubdirectories = false,
+            EnableRaisingEvents = true,
+        };
+        _watcher.Created += OnDiskChanged;
+        _watcher.Changed += OnDiskChanged;
+        _watcher.Deleted += OnDiskChanged;
+        _watcher.Renamed += (s, e) => OnDiskChanged(s, e);
+    }
+
+    private void OnDiskChanged(object sender, FileSystemEventArgs e)
+    {
+        _debounceTimer?.Dispose();
+        _debounceTimer = new Timer(_ => ReloadFromDisk(), null, 300, Timeout.Infinite);
+    }
+
+    private void ReloadFromDisk()
+    {
+        var newRules = new Dictionary<Guid, AutoResponderRule>();
+        var newFiles = new Dictionary<Guid, string>();
+
+        foreach (var path in Directory.GetFiles(_dir, "*.json"))
+        {
+            try
+            {
+                var rule = JsonSerializer.Deserialize<AutoResponderRule>(File.ReadAllText(path), _json);
+                if (rule is null) continue;
+                newRules[rule.Id] = rule;
+                newFiles[rule.Id] = path;
+            }
+            catch { }
+        }
+
+        _rules.Clear();
+        _files.Clear();
+        foreach (var (id, rule) in newRules) _rules[id] = rule;
+        foreach (var (id, path) in newFiles) _files[id] = path;
+    }
+
+    public void Dispose()
+    {
+        _debounceTimer?.Dispose();
+        _watcher.Dispose();
     }
 
     public IEnumerable<AutoResponderRule> GetAll() => _rules.Values;

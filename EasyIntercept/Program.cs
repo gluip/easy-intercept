@@ -70,8 +70,12 @@ app.MapPost("/api/sessions/{id:guid}/replay", async (Guid id, SessionStore store
         request.Headers.TryAddWithoutValidation(k, v);
     }
     if (!string.IsNullOrEmpty(session.RequestBody))
-        request.Content = new StringContent(session.RequestBody, System.Text.Encoding.UTF8,
-            session.RequestHeaders.GetValueOrDefault("Content-Type", "application/octet-stream"));
+    {
+        var contentType = session.RequestHeaders.GetValueOrDefault("Content-Type", "application/octet-stream");
+        request.Content = new StringContent(session.RequestBody, System.Text.Encoding.UTF8);
+        request.Content.Headers.ContentType = null;
+        request.Content.Headers.TryAddWithoutValidation("Content-Type", contentType);
+    }
 
     var resp = await client.SendAsync(request);
     var body = await resp.Content.ReadAsStringAsync();
