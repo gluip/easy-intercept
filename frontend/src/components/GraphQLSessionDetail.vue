@@ -6,6 +6,7 @@ import {
   parseGraphQLResponse,
   getOperationType,
   getOperationName,
+  getTracingDurationMs,
   highlightGraphQL,
   type GraphQLOperation,
   type GraphQLResult,
@@ -61,6 +62,12 @@ function fmtJson(val: unknown): string {
 function hasVariables(op: GraphQLOperation): boolean {
   return !!op.variables && Object.keys(op.variables).length > 0;
 }
+
+function formatTracingDuration(ms: number): string {
+  if (ms < 1) return "<1ms";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(2)}s`;
+}
 </script>
 
 <template>
@@ -100,6 +107,13 @@ function hasVariables(op: GraphQLOperation): boolean {
               {{ getOperationType(item.operation.query) }}
             </span>
             <span class="op-name">{{ getOperationName(item.operation) ?? "(anonymous)" }}</span>
+            <span
+              v-if="getTracingDurationMs(item.result) !== null"
+              class="pill pill-tracing"
+              title="Apollo tracing duration (server-side execution time)"
+            >
+              ⏱ {{ formatTracingDuration(getTracingDurationMs(item.result)!) }}
+            </span>
             <span v-if="item.result?.errors?.length" class="error-badge">
               {{ item.result.errors.length }} error{{ item.result.errors.length === 1 ? "" : "s" }}
             </span>
@@ -200,6 +214,10 @@ function hasVariables(op: GraphQLOperation): boolean {
 .pill-error {
   background: #3a1e1e;
   color: #f44747;
+}
+.pill-tracing {
+  background: #3a2e1e;
+  color: #dcb67a;
 }
 
 .stats-actions {

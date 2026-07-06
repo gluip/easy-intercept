@@ -11,6 +11,7 @@ export interface GraphQLOperation {
 export interface GraphQLResult {
   data?: unknown;
   errors?: GraphQLError[];
+  extensions?: Record<string, unknown>;
 }
 
 export interface GraphQLError {
@@ -51,8 +52,19 @@ export function parseGraphQLResponse(session: ProxySession): GraphQLResult[] | n
   const items = Array.isArray(body) ? body : [body];
   return items.map((item) => {
     const rec = (item ?? {}) as Record<string, unknown>;
-    return { data: rec.data, errors: rec.errors as GraphQLError[] | undefined };
+    return {
+      data: rec.data,
+      errors: rec.errors as GraphQLError[] | undefined,
+      extensions: rec.extensions as Record<string, unknown> | undefined,
+    };
   });
+}
+
+/** Extracts the Apollo tracing extension's server-side execution duration, converted from nanoseconds to milliseconds. */
+export function getTracingDurationMs(result: GraphQLResult | null | undefined): number | null {
+  const tracing = result?.extensions?.tracing as { duration?: unknown } | undefined;
+  const ns = tracing?.duration;
+  return typeof ns === "number" ? ns / 1e6 : null;
 }
 
 export function isGraphQLRequest(session: ProxySession): boolean {

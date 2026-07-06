@@ -5,7 +5,7 @@ import ContextMenu, { type MenuItem } from "./ContextMenu.vue";
 import { detectLLMProvider } from "../utils/llm-detection";
 import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream } from "../utils/llm-stream-parser";
 import { isElasticsearchRequest, detectESOperation, parseESIndex } from "../utils/es-detection";
-import { isGraphQLRequest, parseGraphQLRequest, getOperationName, getOperationType } from "../utils/graphql-detection";
+import { isGraphQLRequest, parseGraphQLRequest, parseGraphQLResponse, getOperationName, getOperationType, getTracingDurationMs } from "../utils/graphql-detection";
 import { calcCost, formatCost } from "../utils/llm-cost";
 import { detectRequestKind, REQUEST_KIND_LABELS, REQUEST_KIND_ICONS, type RequestKind } from "../utils/request-kind-detection";
 
@@ -639,6 +639,10 @@ function graphqlPreview(s: ProxySession): string | null {
   const ops = parseGraphQLRequest(s);
   if (!ops || ops.length === 0) return null;
   const names = ops.map((op) => `${getOperationType(op.query)} ${getOperationName(op) ?? "?"}`);
+  if (ops.length === 1) {
+    const tracingMs = getTracingDurationMs(parseGraphQLResponse(s)?.[0]);
+    if (tracingMs !== null) return `${names[0]} · ${Math.round(tracingMs)}ms`;
+  }
   return names.join(", ");
 }
 
