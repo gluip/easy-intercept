@@ -8,6 +8,10 @@ obj/
 *.db-wal
 easyntercept-ca.pfx
 easyntercept-ca.crt
+certs/
+.env
+appsettings.Development.json
+appsettings.Local.json
 
 # VS / Rider
 .vs/
