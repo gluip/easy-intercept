@@ -53,6 +53,10 @@ const selectedSession = computed(() =>
     ? (sessions.value.find((s) => s.id === selectedIds.value[0]) ?? null)
     : null,
 );
+function formatMs(ms: number): string {
+  if (ms >= 1000) return `${(ms / 1000).toFixed(2)}s`;
+  return `${Math.round(ms)}ms`;
+}
 
 const selectionStats = computed(() => {
   if (selectedIds.value.length <= 1) return null;
@@ -60,6 +64,17 @@ const selectionStats = computed(() => {
   let promptTokens = 0, responseTokens = 0, cachedTokens = 0, thoughtTokens = 0;
   let totalCost = 0;
   let llmCount = 0;
+
+  let totalWaitTime = 0;
+  let minStart = Infinity, maxEnd = -Infinity;
+  for (const s of selected) {
+    const start = new Date(s.timestamp).getTime();
+    const dur = Math.max(s.responseStatus === 0 ? Date.now() - start : s.durationMs, 0);
+    totalWaitTime += dur;
+    minStart = Math.min(minStart, start);
+    maxEnd = Math.max(maxEnd, start + dur);
+  }
+  const wallClockTime = selected.length > 0 ? Math.max(maxEnd - minStart, 0) : 0;
 
   for (const s of selected) {
     const provider = detectLLMProvider(s);
@@ -109,7 +124,7 @@ const selectionStats = computed(() => {
     } catch { /* skip */ }
   }
 
-  return { count: selected.length, llmCount, promptTokens, responseTokens, cachedTokens, thoughtTokens, totalCost };
+  return { count: selected.length, llmCount, promptTokens, responseTokens, cachedTokens, thoughtTokens, totalCost, totalWaitTime, wallClockTime };
 });
 
 function selectSessions(ids: string[]) {
@@ -287,6 +302,10 @@ onMounted(async () => {
       <div v-else class="detail-placeholder">
         <template v-if="selectionStats">
           <div class="sel-count">{{ selectionStats.count }} requests selected</div>
+          <div class="sel-timing">
+            <span title="Sum of each request's own duration">⏳ wait {{ formatMs(selectionStats.totalWaitTime) }}</span>
+            <span title="Wall-clock time from first start to last finish">🕒 wall {{ formatMs(selectionStats.wallClockTime) }}</span>
+          </div>
           <template v-if="selectionStats.llmCount > 0">
             <div class="sel-tokens">
               <span title="Input tokens">↑ {{ selectionStats.promptTokens.toLocaleString() }}</span>
@@ -487,6 +506,14 @@ header small {
 .sel-count {
   color: #858585;
   font-size: 13px;
+}
+
+.sel-timing {
+  display: flex;
+  gap: 12px;
+  color: #dcdcaa;
+  font-size: 13px;
+  font-family: "Cascadia Code", "Fira Code", monospace;
 }
 
 .sel-tokens {

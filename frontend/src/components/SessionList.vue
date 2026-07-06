@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import type { ProxySession } from "../types";
 import ContextMenu, { type MenuItem } from "./ContextMenu.vue";
 import { detectLLMProvider } from "../utils/llm-detection";
@@ -7,6 +7,7 @@ import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopi
 import { isElasticsearchRequest, detectESOperation, parseESIndex } from "../utils/es-detection";
 import { isGraphQLRequest, parseGraphQLRequest, getOperationName, getOperationType } from "../utils/graphql-detection";
 import { calcCost, formatCost } from "../utils/llm-cost";
+import { detectRequestKind, REQUEST_KIND_LABELS, REQUEST_KIND_ICONS, type RequestKind } from "../utils/request-kind-detection";
 
 const props = defineProps<{
   sessions: readonly ProxySession[];
@@ -25,6 +26,8 @@ const listEl = ref<HTMLElement>();
 const lastClickedId = ref<string | null>(null);
 const filterText = ref("");
 const llmOnly = ref(false);
+const kindFilter = ref<RequestKind | "all">("all");
+const timelineMode = ref(false);
 
 const ctxMenu = ref<{ session: ProxySession; x: number; y: number } | null>(
   null,
@@ -53,6 +56,48 @@ function loadMarks(): Record<string, string> {
 
 const marks = ref<Record<string, string>>(loadMarks());
 
+// Hideable fixed columns — persisted per browser
+type FixedColKey = "method" | "status" | "host" | "url" | "dur";
+const COLUMN_LABELS: Record<FixedColKey, string> = {
+  method: "Method", status: "Status", host: "Host", url: "URL", dur: "ms",
+};
+const VISIBLE_COLS_KEY = "easyintercept.visibleColumns";
+
+function loadVisibleCols(): Record<FixedColKey, boolean> {
+  const defaults: Record<FixedColKey, boolean> = { method: true, status: true, host: true, url: true, dur: true };
+  try {
+    return { ...defaults, ...JSON.parse(localStorage.getItem(VISIBLE_COLS_KEY) ?? "{}") };
+  } catch {
+    return defaults;
+  }
+}
+
+const visibleCols = ref<Record<FixedColKey, boolean>>(loadVisibleCols());
+
+function toggleColumn(col: FixedColKey) {
+  const next = { ...visibleCols.value, [col]: !visibleCols.value[col] };
+  if (Object.values(next).some(Boolean)) {
+    visibleCols.value = next;
+    localStorage.setItem(VISIBLE_COLS_KEY, JSON.stringify(next));
+  }
+}
+
+const columnsMenuOpen = ref(false);
+const columnsMenuPos = ref<{ x: number; y: number } | null>(null);
+const columnsMenuEl = ref<HTMLElement>();
+
+function openColumnsMenuAtCursor(e: MouseEvent) {
+  e.preventDefault();
+  columnsMenuPos.value = { x: e.clientX, y: e.clientY };
+  columnsMenuOpen.value = true;
+}
+
+function handleColumnsOutside(e: MouseEvent) {
+  if (columnsMenuEl.value && !columnsMenuEl.value.contains(e.target as Node)) {
+    columnsMenuOpen.value = false;
+  }
+}
+
 function setMark(id: string, color: string) {
   if (color) marks.value[id] = color;
   else delete marks.value[id];
@@ -79,6 +124,7 @@ function rowStyle(s: ProxySession): Record<string, string> {
   else if (cc) shadows.push(`inset 3px 0 0 ${cc}`);
   if (shadows.length) style.boxShadow = shadows.join(", ");
   if (mc) style.backgroundColor = hexToRgba(mc, 0.35);
+  else if (detectRequestKind(s) === "asset") style.opacity = "0.55";
   return style;
 }
 
@@ -91,7 +137,12 @@ const filteredSessions = computed(() => {
   if (llmOnly.value) {
     result = result.filter((s) => detectLLMProvider(s) !== null);
   }
-  
+
+  // Filter by request kind
+  if (kindFilter.value !== "all") {
+    result = result.filter((s) => detectRequestKind(s) === kindFilter.value);
+  }
+
   // Filter by URL text
   const needle = filterText.value.toLowerCase().trim();
   if (needle) {
@@ -101,9 +152,41 @@ const filteredSessions = computed(() => {
       s.responseBody.toLowerCase().includes(needle)
     );
   }
-  
+
+  // Chronological order in timeline mode — newest on top, oldest at the
+  // bottom, matching the default (non-timeline) list order so the rows
+  // don't visually flip when the toggle is switched on.
+  if (timelineMode.value) {
+    result = [...result].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    );
+  }
+
   return result;
 });
+
+const timelineRange = computed(() => {
+  if (!timelineMode.value || filteredSessions.value.length === 0) return null;
+  const starts = filteredSessions.value.map((s) => new Date(s.timestamp).getTime());
+  const ends = filteredSessions.value.map((s) => {
+    const start = new Date(s.timestamp).getTime();
+    const dur = s.responseStatus === 0 ? Date.now() - start : s.durationMs;
+    return start + Math.max(dur, 0);
+  });
+  const min = Math.min(...starts);
+  const max = Math.max(...ends);
+  return { min, span: Math.max(max - min, 1) };
+});
+
+function timelineBarStyle(s: ProxySession): Record<string, string> {
+  const range = timelineRange.value;
+  if (!range) return {};
+  const start = new Date(s.timestamp).getTime();
+  const dur = s.responseStatus === 0 ? Date.now() - start : s.durationMs;
+  const left = ((start - range.min) / range.span) * 100;
+  const width = Math.max((Math.max(dur, 0) / range.span) * 100, 0.5);
+  return { left: left + "%", width: width + "%" };
+}
 
 const menuItems = computed(() => {
   const items: MenuItem[] = [
@@ -249,6 +332,11 @@ function onKeyDown(e: KeyboardEvent) {
 onMounted(() => document.addEventListener("keydown", onKeyDown));
 onUnmounted(() => document.removeEventListener("keydown", onKeyDown));
 
+watch(columnsMenuOpen, (open) => {
+  if (open) setTimeout(() => document.addEventListener("mousedown", handleColumnsOutside), 0);
+  else document.removeEventListener("mousedown", handleColumnsOutside);
+});
+
 function methodClass(m: string) {
   return ["GET", "POST", "PUT", "DELETE", "PATCH"].includes(m) ? m : "";
 }
@@ -265,18 +353,27 @@ function isAutoResponse(s: ProxySession) {
   return s.responseHeaders?.["X-EasyIntercept-AutoResponder"] === "true";
 }
 
+function hostOf(url: string): string {
+  try { return new URL(url).host; } catch { return ""; }
+}
+function pathOf(url: string): string {
+  try { const u = new URL(url); return u.pathname + u.search; } catch { return url; }
+}
+
 // ── Column resize ─────────────────────────────────────────
 
-type ColKey = "method" | "status" | "url" | "tools" | "results" | "dur" | "cost";
+type ColKey = "method" | "status" | "host" | "url" | "tools" | "results" | "dur" | "cost" | "timeline";
 
 const colWidths = ref<Record<ColKey, number>>({
   method: 62,
   status: 46,
+  host: 140,
   url: 200,
   tools: 130,
   results: 320,
   dur: 56,
   cost: 80,
+  timeline: 160,
 });
 
 function startColResize(col: ColKey, e: MouseEvent) {
@@ -623,19 +720,45 @@ function llmCost(s: ProxySession): string | null {
         <input v-model="llmOnly" type="checkbox" />
         <span>LLM requests only</span>
       </label>
+      <select v-model="kindFilter" class="kind-filter" title="Filter by request type">
+        <option value="all">All types</option>
+        <option v-for="k in (['document', 'asset', 'browser-api', 'backend'] as RequestKind[])" :key="k" :value="k">
+          {{ REQUEST_KIND_ICONS[k] }} {{ REQUEST_KIND_LABELS[k] }}
+        </option>
+      </select>
+      <label class="llm-filter">
+        <input v-model="timelineMode" type="checkbox" />
+        <span>⏱ Timeline</span>
+      </label>
+      <div ref="columnsMenuEl">
+        <div
+          v-if="columnsMenuOpen"
+          class="columns-menu"
+          :style="{ left: (columnsMenuPos?.x ?? 0) + 'px', top: (columnsMenuPos?.y ?? 0) + 'px' }"
+        >
+          <label v-for="(label, key) in COLUMN_LABELS" :key="key">
+            <input type="checkbox" :checked="visibleCols[key]" @change="toggleColumn(key)" />
+            <span>{{ label }}</span>
+          </label>
+        </div>
+      </div>
     </div>
     <table>
-      <thead>
+      <thead @contextmenu="openColumnsMenuAtCursor">
         <tr>
-          <th class="col-method" :style="{ width: colWidths.method + 'px' }">
+          <th v-if="visibleCols.method" class="col-method" :style="{ width: colWidths.method + 'px' }">
             Method
             <div class="col-resize-handle" @mousedown="startColResize('method', $event)" />
           </th>
-          <th class="col-status" :style="{ width: colWidths.status + 'px' }">
+          <th v-if="visibleCols.status" class="col-status" :style="{ width: colWidths.status + 'px' }">
             Status
             <div class="col-resize-handle" @mousedown="startColResize('status', $event)" />
           </th>
-          <th class="col-url" :style="{ width: colWidths.url + 'px' }">
+          <th v-if="visibleCols.host" class="col-host" :style="{ width: colWidths.host + 'px' }">
+            Host
+            <div class="col-resize-handle" @mousedown="startColResize('host', $event)" />
+          </th>
+          <th v-if="visibleCols.url" class="col-url" :style="{ width: colWidths.url + 'px' }">
             URL
             <div class="col-resize-handle" @mousedown="startColResize('url', $event)" />
           </th>
@@ -647,12 +770,16 @@ function llmCost(s: ProxySession): string | null {
             Results
             <div class="col-resize-handle" @mousedown="startColResize('results', $event)" />
           </th>
-          <th class="col-dur" :style="{ width: colWidths.dur + 'px' }">
+          <th v-if="visibleCols.dur" class="col-dur" :style="{ width: colWidths.dur + 'px' }">
             ms
           </th>
           <th v-if="llmOnly" class="col-cost" :style="{ width: colWidths.cost + 'px' }">
             cost
             <div class="col-resize-handle" @mousedown="startColResize('cost', $event)" />
+          </th>
+          <th v-if="timelineMode" class="col-timeline" :style="{ width: colWidths.timeline + 'px' }">
+            Timeline
+            <div class="col-resize-handle" @mousedown="startColResize('timeline', $event)" />
           </th>
         </tr>
       </thead>
@@ -666,24 +793,31 @@ function llmCost(s: ProxySession): string | null {
           @click="handleClick($event, s)"
           @contextmenu="onContextMenu($event, s)"
         >
-          <td class="col-method" :class="methodClass(s.method)">
+          <td v-if="visibleCols.method" class="col-method" :class="methodClass(s.method)">
             {{ s.method }}
           </td>
-          <td class="col-status" :class="statusClass(s.responseStatus)">
+          <td v-if="visibleCols.status" class="col-status" :class="statusClass(s.responseStatus)">
             <span v-if="s.responseStatus === 0" class="pending-dots">···</span>
             <template v-else>{{ s.responseStatus }}</template>
           </td>
-          <td class="col-url" :title="s.url">
+          <td v-if="visibleCols.host" class="col-host" :title="hostOf(s.url)">{{ hostOf(s.url) }}</td>
+          <td v-if="visibleCols.url" class="col-url" :title="s.url">
             <span
               v-if="isAutoResponse(s)"
               class="ar-badge"
               title="Auto Responder"
               >⚡</span
             >
+            <span
+              class="kind-badge"
+              :class="'kind-' + detectRequestKind(s)"
+              :title="REQUEST_KIND_LABELS[detectRequestKind(s)]"
+              >{{ REQUEST_KIND_ICONS[detectRequestKind(s)] }}</span
+            >
             <span v-if="llmPreview(s)" class="llm-preview">{{ llmPreview(s) }}</span>
             <span v-else-if="esPreview(s)" class="es-preview">{{ esPreview(s) }}</span>
             <span v-else-if="graphqlPreview(s)" class="gql-preview">{{ graphqlPreview(s) }}</span>
-            <span v-else>{{ s.url }}</span>
+            <span v-else>{{ pathOf(s.url) }}</span>
           </td>
           <td v-if="llmOnly" class="col-tools">
             <span
@@ -701,8 +835,18 @@ function llmCost(s: ProxySession): string | null {
               :title="r.snippet"
             >{{ r.label }}</span>
           </td>
-          <td class="col-dur">{{ s.responseStatus === 0 ? "" : s.durationMs }}</td>
+          <td v-if="visibleCols.dur" class="col-dur">{{ s.responseStatus === 0 ? "" : s.durationMs }}</td>
           <td v-if="llmOnly" class="col-cost">{{ s.responseStatus === 0 ? "" : (llmCost(s) ?? "") }}</td>
+          <td v-if="timelineMode" class="col-timeline">
+            <div class="timeline-track">
+              <span
+                class="timeline-bar"
+                :class="'kind-' + detectRequestKind(s)"
+                :style="timelineBarStyle(s)"
+                :title="`${new Date(s.timestamp).toLocaleTimeString()} · ${s.responseStatus === 0 ? 'pending' : s.durationMs + 'ms'}`"
+              />
+            </div>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -799,6 +943,16 @@ function llmCost(s: ProxySession): string | null {
 }
 
 .llm-filter input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.kind-filter {
+  font-size: 12px;
+  color: #cccccc;
+  background: #1e1e1e;
+  border: 1px solid #3e3e42;
+  border-radius: 3px;
+  padding: 3px 6px;
   cursor: pointer;
 }
 
@@ -922,6 +1076,72 @@ td {
 .ar-badge {
   margin-right: 4px;
   font-size: 11px;
+}
+
+.kind-badge {
+  margin-right: 4px;
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.kind-badge.kind-asset {
+  opacity: 0.5;
+}
+
+.columns-menu {
+  position: fixed;
+  z-index: 1000;
+  background: #252526;
+  border: 1px solid #3e3e42;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  padding: 4px 0;
+  min-width: 120px;
+}
+.columns-menu label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: #d4d4d4;
+  cursor: pointer;
+}
+.columns-menu label:hover {
+  background: #094771;
+}
+.col-host {
+  color: #858585;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.timeline-track {
+  position: relative;
+  height: 14px;
+  background: #1e1e1e;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.timeline-bar {
+  position: absolute;
+  top: 1px;
+  height: 12px;
+  border-radius: 2px;
+  min-width: 2px;
+}
+.timeline-bar.kind-document {
+  background: #569cd6;
+}
+.timeline-bar.kind-asset {
+  background: #6a6a6a;
+}
+.timeline-bar.kind-browser-api {
+  background: #4ec9b0;
+}
+.timeline-bar.kind-backend {
+  background: #dc8a3a;
 }
 
 .col-resize-handle {

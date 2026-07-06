@@ -279,22 +279,26 @@ function downloadRequestResponse() {
     <template v-else>
       <SessionHeaders :headers="session.requestHeaders" label="Request Headers" />
 
-      <div class="section-hdr">
-        <h3>Request Body</h3>
-        <button class="view-btn" @click="emit('openViewer', session, 'request')">⬡ View</button>
-      </div>
-      <pre v-html="formatBodyHtml(session.requestBody)"></pre>
+      <details class="body-details" open>
+        <summary>
+          <span>Request Body</span>
+          <button class="view-btn" @click.stop="emit('openViewer', session, 'request')">⬡ View</button>
+        </summary>
+        <pre v-html="formatBodyHtml(session.requestBody)"></pre>
+      </details>
 
       <SessionHeaders :headers="session.responseHeaders" label="Response Headers" />
 
-      <div class="section-hdr">
-        <h3>Response Body</h3>
-        <button class="view-btn" @click="emit('openViewer', session, 'response')">⬡ View</button>
-      </div>
-      <div v-if="isResponseImage && responseImageSrc" class="image-preview">
-        <img :src="responseImageSrc" class="preview-image" />
-      </div>
-      <pre v-else v-html="formatBodyHtml(session.responseBody)"></pre>
+      <details class="body-details" open>
+        <summary>
+          <span>Response Body</span>
+          <button class="view-btn" @click.stop="emit('openViewer', session, 'response')">⬡ View</button>
+        </summary>
+        <div v-if="isResponseImage && responseImageSrc" class="image-preview">
+          <img :src="responseImageSrc" class="preview-image" />
+        </div>
+        <pre v-else v-html="formatBodyHtml(session.responseBody)"></pre>
+      </details>
     </template>
   </div>
 </template>
@@ -314,13 +318,6 @@ h2 {
   word-break: break-all;
 }
 
-h3 {
-  font-size: 11px;
-  color: #858585;
-  text-transform: uppercase;
-  margin: 12px 0 4px;
-  letter-spacing: 0.05em;
-}
 
 pre {
   background: #252526;
@@ -364,14 +361,43 @@ pre {
   color: #1e1e1e;
 }
 
-.section-hdr {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.body-details {
   margin: 12px 0 4px;
 }
-.section-hdr h3 {
-  margin: 0;
+.body-details summary {
+  font-size: 11px;
+  color: #858585;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+}
+.body-details summary::-webkit-details-marker { display: none; }
+.body-details summary::before {
+  content: '▸';
+  color: #858585;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.body-details[open] summary::before {
+  content: '▾';
+}
+.body-details summary:hover {
+  color: #d4d4d4;
+}
+.body-details summary:hover::before {
+  color: #d4d4d4;
+}
+.body-details summary .view-btn {
+  margin-left: auto;
+}
+.body-details pre,
+.body-details .image-preview {
+  margin-top: 6px;
 }
 .view-btn {
   background: #1e2a3f;

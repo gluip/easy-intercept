@@ -92,6 +92,16 @@ export function parseFilters(query: Record<string, unknown>): ESFilter[] {
       }
     }
 
+    if (rec["semantic"]) {
+      const t = rec["semantic"] as Record<string, unknown>;
+      filters.push({ type: "semantic", field: String(t["field"] ?? ""), value: String(t["query"] ?? "") });
+    }
+
+    if (rec["knn"]) {
+      const t = rec["knn"] as Record<string, unknown>;
+      filters.push({ type: "knn", field: String(t["field"] ?? ""), value: `k=${t["k"] ?? "?"}` });
+    }
+
     if (rec["bool"]) {
       const b = rec["bool"] as Record<string, unknown>;
       for (const key of ["filter", "must", "should", "must_not"]) {
