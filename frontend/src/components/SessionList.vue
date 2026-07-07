@@ -630,6 +630,7 @@ function esPreview(s: ProxySession): string | null {
     if (op === "pit-create") return `pit  ·  ${idx || "create"}`;
     if (op === "pit-delete") return `pit delete  ·  freed ${resp?.num_freed ?? "?"}`;
     if (op === "bulk") return `bulk  ·  ${idx}`;
+    if (op === "bulk-log") return `logs  ·  ${idx}`;
   } catch { /* fall through */ }
   return idx ? `${op}  ·  ${idx}` : null;
 }
