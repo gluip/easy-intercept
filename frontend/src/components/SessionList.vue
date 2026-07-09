@@ -194,11 +194,12 @@ const menuItems = computed(() => {
     { label: "Copy file path", icon: "📄", action: "copy-file-path" },
     { label: "Show in Explorer", icon: "📂", action: "show-in-explorer" },
     { label: "Replay", icon: "🔁", action: "replay" },
+    { label: "Add to Bruno", icon: "🐶", action: "add-to-bruno" },
     { label: "Mark", icon: "🎨", action: "mark", colors: MARK_COLORS },
     { label: "Delete", icon: "🗑️", action: "delete" },
   ];
   if (props.selectedIds.length === 2) {
-    items.splice(5, 0, { label: "Compare", icon: "⚖️", action: "compare" });
+    items.splice(6, 0, { label: "Compare", icon: "⚖️", action: "compare" });
   }
   return items;
 });
@@ -263,6 +264,10 @@ function onMenuSelect(action: string) {
     fetch(`/api/sessions/${session.id}/show-in-explorer`, { method: "POST" }).catch(() => {});
   }
   else if (action === "replay") emit("replay", session);
+  else if (action === "add-to-bruno") {
+    const ids = props.selectedIds.includes(session.id) ? [...props.selectedIds] : [session.id];
+    exportToBruno(session, ids);
+  }
   else if (action === "delete") emit("deleteSelected", [...props.selectedIds]);
   else if (action === "compare" && props.selectedIds.length === 2)
     emit("compare", [props.selectedIds[0], props.selectedIds[1]]);
@@ -270,6 +275,44 @@ function onMenuSelect(action: string) {
     const color = action.slice("mark:".length);
     const ids = props.selectedIds.includes(session.id) ? props.selectedIds : [session.id];
     ids.forEach((id) => setMark(id, color));
+  }
+}
+
+const BRUNO_PATH_KEY = "bruno-collection-path";
+
+function defaultBrunoName(session: ProxySession): string {
+  try {
+    return `${session.method} ${new URL(session.url).pathname}`;
+  } catch {
+    return `${session.method} ${session.url}`;
+  }
+}
+
+async function exportToBruno(session: ProxySession, sessionIds: string[]) {
+  let name: string | null = null;
+  if (sessionIds.length === 1) {
+    const target = props.sessions.find((s) => s.id === sessionIds[0]) ?? session;
+    const input = window.prompt("Bruno request name:", defaultBrunoName(target));
+    if (input === null) return;
+    name = input.trim() || null;
+  }
+  const lastPath = localStorage.getItem(BRUNO_PATH_KEY) ?? "";
+  const path = window.prompt("Bruno collection folder:", lastPath);
+  if (!path?.trim()) return;
+  localStorage.setItem(BRUNO_PATH_KEY, path.trim());
+  try {
+    const resp = await fetch("/api/bruno/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionIds, collectionPath: path.trim(), name }),
+    });
+    if (!resp.ok) {
+      let message = await resp.text();
+      try { message = JSON.parse(message); } catch { /* plain text */ }
+      alert(`Export to Bruno failed: ${message}`);
+    }
+  } catch (e) {
+    alert(`Export to Bruno failed: ${e}`);
   }
 }
 

@@ -185,7 +185,7 @@ function saveRule() {
             @click.stop="emit('toggle', rule.id)"
           />
           <span class="rule-method" :class="rule.method">{{ rule.method }}</span>
-          <span class="rule-url" :title="rule.url">{{ rule.url }}</span>
+          <span class="rule-url" :title="rule.url">{{ rule.name || rule.url }}</span>
           <span class="rule-status">{{ rule.responseStatus }}</span>
           <button class="del-btn" @click.stop="emit('delete', rule.id)">✕</button>
         </div>

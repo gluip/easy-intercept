@@ -1,5 +1,6 @@
 using EasyIntercept.AutoResponder;
 using EasyIntercept.Certificates;
+using EasyIntercept.Export;
 using EasyIntercept.Hubs;
 using EasyIntercept.Proxy;
 using EasyIntercept.Storage;
@@ -102,6 +103,32 @@ app.MapPost("/api/sessions/{id:guid}/show-in-explorer", (Guid id, SessionStore s
     return Results.Ok();
 });
 
+app.MapPost("/api/bruno/export", (BrunoExportRequest body, SessionStore store) =>
+{
+    if (string.IsNullOrWhiteSpace(body.CollectionPath) || !Directory.Exists(body.CollectionPath))
+        return Results.BadRequest($"Folder does not exist: {body.CollectionPath}");
+
+    // custom name only makes sense for a single request
+    var customName = body.SessionIds.Length == 1 ? body.Name : null;
+
+    var written = new List<string>();
+    foreach (var id in body.SessionIds)
+    {
+        var session = store.Get(id);
+        if (session is null) continue;
+        var baseName = Path.GetFileNameWithoutExtension(BrunoExporter.FileName(session, customName));
+        var filePath = Path.Combine(body.CollectionPath, baseName + ".bru");
+        for (var n = 2; File.Exists(filePath); n++)
+            filePath = Path.Combine(body.CollectionPath, $"{baseName}_{n}.bru");
+        File.WriteAllText(filePath, BrunoExporter.ToBru(session, customName));
+        written.Add(Path.GetFileName(filePath));
+    }
+
+    return written.Count > 0
+        ? Results.Ok(new { files = written })
+        : Results.NotFound("No matching sessions found");
+});
+
 app.MapGet("/api/auto-responders", (AutoResponderStore store) =>
     Results.Ok(store.GetAll()));
 
@@ -184,3 +211,4 @@ app.MapGet("/install", async (HttpContext ctx) =>
 await app.RunAsync();
 
 record SystemProxyEnableRequest(bool Enabled);
+record BrunoExportRequest(Guid[] SessionIds, string CollectionPath, string? Name = null);
