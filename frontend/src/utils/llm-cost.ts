@@ -38,6 +38,10 @@ const COPILOT_PRICING: Array<[string, ModelPricing]> = [
 
 // Ordered longest-prefix-first; cached = 0.5x input price for OpenAI
 const OPENAI_PRICING: Array<[string, ModelPricing]> = [
+  // gpt-5.6 (Jul 2026) — https://developers.openai.com/api/docs/pricing
+  ["gpt-5.6-sol",   { inputPerMTok: 5.00,  outputPerMTok: 30.00,  cachedPerMTok: 0.50  }],
+  ["gpt-5.6-terra", { inputPerMTok: 2.50,  outputPerMTok: 15.00,  cachedPerMTok: 0.25  }],
+  ["gpt-5.6-luna",  { inputPerMTok: 1.00,  outputPerMTok: 6.00,   cachedPerMTok: 0.10  }],
   // gpt-5.x flagship (May 2026)
   ["gpt-5.5-pro",   { inputPerMTok: 30.00, outputPerMTok: 180.00, cachedPerMTok: 0     }],
   ["gpt-5.5",       { inputPerMTok: 5.00,  outputPerMTok: 30.00,  cachedPerMTok: 0.50  }],

@@ -9,7 +9,9 @@ export function detectLLMProvider(session: ProxySession): LLMProvider {
   if (url.includes("/v1/messages")) return "anthropic";
   if (url.includes("githubcopilot.com/responses")) return "copilot";
   if (url.includes("api.openai.com/v1/chat/completions")) return "openai";
+  if (url.includes("api.openai.com/v1/responses")) return "openai";
   if (url.includes("/chat/completions")) return "openai";
+  if (url.includes("/v1/responses")) return "openai";
   return null;
 }
 

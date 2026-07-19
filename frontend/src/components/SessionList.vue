@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import type { ProxySession } from "../types";
 import ContextMenu, { type MenuItem } from "./ContextMenu.vue";
 import { detectLLMProvider } from "../utils/llm-detection";
-import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream } from "../utils/llm-stream-parser";
+import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream, isOpenAIResponsesRequest, parseOpenAIResponses } from "../utils/llm-stream-parser";
 import { isElasticsearchRequest, detectESOperation, parseESIndex } from "../utils/es-detection";
 import { isGraphQLRequest, parseGraphQLRequest, parseGraphQLResponse, getOperationName, getOperationType, getTracingDurationMs } from "../utils/graphql-detection";
 import { calcCost, formatCost } from "../utils/llm-cost";
@@ -401,6 +401,13 @@ function llmPreview(s: ProxySession): string | null {
   const provider = detectLLMProvider(s);
   if (!provider) return null;
   try {
+    if (provider === "openai" && isOpenAIResponsesRequest(s.requestBody)) {
+      const r = parseOpenAIResponses(s.responseBody);
+      const msg = r.output.find((o) => o.type === "message") as { content?: { type: string; text?: string }[] } | undefined;
+      const text = msg?.content?.find((c) => c.type === "output_text")?.text;
+      return text?.trim() || null;
+    }
+
     let res: any;
     if (isStreamingResponse(s.responseBody)) {
       if (provider === "openai") res = parseOpenAIStream(s.responseBody);
@@ -436,6 +443,13 @@ function llmToolCalls(s: ProxySession): string[] {
   const provider = detectLLMProvider(s);
   if (!provider) return [];
   try {
+    if (provider === "openai" && isOpenAIResponsesRequest(s.requestBody)) {
+      const r = parseOpenAIResponses(s.responseBody);
+      return r.output
+        .filter((o) => o.type === "function_call")
+        .map((o) => o.name as string);
+    }
+
     let res: any;
     if (isStreamingResponse(s.responseBody)) {
       if (provider === "openai") res = parseOpenAIStream(s.responseBody);
@@ -533,6 +547,19 @@ function llmToolResults(s: ProxySession): { label: string; snippet: string }[] {
         return { label: text.slice(0, 60), snippet: text };
       });
     }
+    if (provider === "openai" && isOpenAIResponsesRequest(s.requestBody)) {
+      // Find the last consecutive block of function_call_output items at the end of input
+      const items: { type?: string; output?: string }[] = req.input ?? [];
+      const toolItems: { type?: string; output?: string }[] = [];
+      for (let i = items.length - 1; i >= 0; i--) {
+        if (items[i].type === "function_call_output") toolItems.unshift(items[i]);
+        else break;
+      }
+      return toolItems.map((m) => ({
+        label: (m.output ?? "").slice(0, 60),
+        snippet: m.output ?? "",
+      }));
+    }
     if (provider === "openai") {
       // Find the last consecutive block of tool messages at the end of messages
       const msgs: { role: string; content?: string }[] = req.messages ?? [];
@@ -574,6 +601,7 @@ function convFingerprint(s: ProxySession): string | null {
     const req = JSON.parse(s.requestBody);
     let msgs: unknown[] = [];
     if (provider === "gemini") msgs = req.contents ?? [];
+    else if (provider === "openai" && isOpenAIResponsesRequest(s.requestBody)) msgs = req.input ?? [];
     else msgs = req.messages ?? [];
     if (msgs.length === 0) return null;
     // Use first message as root fingerprint (truncated to avoid huge strings)
@@ -659,6 +687,13 @@ function llmCost(s: ProxySession): string | null {
       responseTokens = parsed.responseTokens;
       cachedTokens   = parsed.cachedTokens;
       modelVersion   = parsed.model;
+    } else if (provider === "openai" && isOpenAIResponsesRequest(s.requestBody)) {
+      const r = parseOpenAIResponses(s.responseBody);
+      promptTokens   = r.promptTokens;
+      responseTokens = r.responseTokens;
+      cachedTokens   = r.cachedTokens;
+      thoughtTokens  = r.thoughtTokens;
+      modelVersion   = r.model;
     } else {
       let res: any;
       if (isStreamingResponse(s.responseBody)) {

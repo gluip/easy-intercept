@@ -157,6 +157,73 @@ export function parseAnthropicStream(body: string): Record<string, unknown> {
   return { id, model, content, usage, stop_reason: stopReason };
 }
 
+/** True if the request body is for the OpenAI Responses API (input[] instead of messages[]) */
+export function isOpenAIResponsesRequest(requestBody: string): boolean {
+  try {
+    const req = JSON.parse(requestBody);
+    return Array.isArray(req.input);
+  } catch {
+    return false;
+  }
+}
+
+export interface OpenAIResponsesResult {
+  model: string;
+  status: string;
+  output: Record<string, unknown>[];
+  promptTokens: number;
+  responseTokens: number;
+  cachedTokens: number;
+  thoughtTokens: number;
+  reasoningEffort: string;
+}
+
+/** Parse an OpenAI /v1/responses response body — plain JSON or SSE stream — into a normalized result. */
+export function parseOpenAIResponses(responseBody: string): OpenAIResponsesResult {
+  const result: OpenAIResponsesResult = {
+    model: "unknown", status: "", output: [],
+    promptTokens: 0, responseTokens: 0, cachedTokens: 0, thoughtTokens: 0,
+    reasoningEffort: "",
+  };
+
+  let resp: Record<string, unknown> | undefined;
+
+  if (isStreamingResponse(responseBody)) {
+    const lines = responseBody.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim() === "event: response.completed" && i + 1 < lines.length) {
+        const dataLine = lines[i + 1];
+        if (!dataLine.startsWith("data:")) continue;
+        try {
+          const obj = JSON.parse(dataLine.slice(5).trim());
+          resp = obj.response as Record<string, unknown>;
+        } catch { /* ignore */ }
+      }
+    }
+  } else {
+    try {
+      resp = JSON.parse(responseBody);
+    } catch { /* ignore */ }
+  }
+
+  if (!resp) return result;
+
+  result.model = (resp.model as string) ?? "unknown";
+  result.status = (resp.status as string) ?? "";
+  result.output = (resp.output as Record<string, unknown>[]) ?? [];
+
+  const u = (resp.usage as Record<string, unknown>) ?? {};
+  const inputDetails = (u.input_tokens_details as Record<string, unknown>) ?? {};
+  const outputDetails = (u.output_tokens_details as Record<string, unknown>) ?? {};
+  result.promptTokens = (u.input_tokens as number) ?? 0;
+  result.responseTokens = (u.output_tokens as number) ?? 0;
+  result.cachedTokens = (inputDetails.cached_tokens as number) ?? 0;
+  result.thoughtTokens = (outputDetails.reasoning_tokens as number) ?? 0;
+  result.reasoningEffort = ((resp.reasoning as Record<string, unknown>)?.effort as string) ?? "";
+
+  return result;
+}
+
 export interface CopilotResponsesParsed {
   model: string;
   output: { type: string; content?: { type: string; text: string }[]; name?: string; arguments?: string; call_id?: string }[];
