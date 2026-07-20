@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import type { ProxySession } from "../types";
 import { detectESOperation, parseESIndex, parseFilters } from "../utils/es-detection";
 import SessionHeaders from "./SessionHeaders.vue";
+import EsBulkLogsDetail from "./EsBulkLogsDetail.vue";
 
 const props = defineProps<{ session: ProxySession }>();
 
@@ -105,6 +106,9 @@ function sourceEntries(source: Record<string, unknown>): [string, string][] {
       <template v-if="operation === 'bulk'">
         <span class="stat"><span class="stat-val">bulk</span></span>
       </template>
+      <template v-if="operation === 'bulk-log'">
+        <span class="stat"><span class="stat-val">log ingestion</span></span>
+      </template>
       <span class="stat muted">{{ session.durationMs }}ms proxy</span>
     </div>
 
@@ -184,6 +188,9 @@ function sourceEntries(source: Record<string, unknown>): [string, string][] {
       </div>
     </template>
 
+    <!-- Bulk log ingestion: parsed log entries view -->
+    <EsBulkLogsDetail v-if="operation === 'bulk-log'" :session="session" />
+
     <!-- Bulk / other: raw fallback -->
     <template v-if="operation === 'bulk' || operation === 'other'">
       <div class="section">
@@ -238,6 +245,7 @@ function sourceEntries(source: Record<string, unknown>): [string, string][] {
 .op-badge.pit-create{ background: #1e2d3a; color: #9cdcfe; }
 .op-badge.pit-delete{ background: #3a1e1e; color: #f44747; }
 .op-badge.bulk      { background: #2d2a1e; color: #dcdcaa; }
+.op-badge.bulk-log  { background: #2d1e2a; color: #c586c0; }
 .op-badge.other     { background: #2a2a2a; color: #858585; }
 
 .index-name {

@@ -1,6 +1,7 @@
 import type { ProxySession } from "../types";
+import { isBulkLogBody } from "./es-bulk-logs";
 
-export type ESOperationType = "search" | "pit-create" | "pit-delete" | "bulk" | "other";
+export type ESOperationType = "search" | "pit-create" | "pit-delete" | "bulk" | "bulk-log" | "other";
 
 export function isElasticsearchRequest(session: ProxySession): boolean {
   const url = session.url.toLowerCase();
@@ -17,7 +18,7 @@ export function isElasticsearchRequest(session: ProxySession): boolean {
 
 export function detectESOperation(session: ProxySession): ESOperationType {
   const url = session.url.toLowerCase();
-  if (url.includes("/_bulk")) return "bulk";
+  if (url.includes("/_bulk")) return isBulkLogBody(session.requestBody) ? "bulk-log" : "bulk";
   if (url.includes("/_pit")) return session.method === "DELETE" ? "pit-delete" : "pit-create";
   if (url.includes("/_search") || url.includes("/_msearch")) return "search";
   return "other";

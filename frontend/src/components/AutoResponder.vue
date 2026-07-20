@@ -25,20 +25,27 @@ function formatXml(xml: string): string {
   }
 }
 
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function serializeXml(node: Element, depth: number): string {
   const indent = "  ".repeat(depth);
   const children = Array.from(node.childNodes);
   const hasElementChildren = children.some((c) => c.nodeType === Node.ELEMENT_NODE);
 
   const attrs = Array.from(node.attributes)
-    .map((a) => ` ${a.name}="${a.value}"`)
+    .map((a) => ` ${a.name}="${escapeXml(a.value).replace(/"/g, "&quot;")}"`)
     .join("");
 
   if (children.length === 0) return `${indent}<${node.tagName}${attrs} />`;
 
   if (!hasElementChildren) {
     const text = node.textContent ?? "";
-    return `${indent}<${node.tagName}${attrs}>${text}</${node.tagName}>`;
+    return `${indent}<${node.tagName}${attrs}>${escapeXml(text)}</${node.tagName}>`;
   }
 
   const inner = children
@@ -185,7 +192,7 @@ function saveRule() {
             @click.stop="emit('toggle', rule.id)"
           />
           <span class="rule-method" :class="rule.method">{{ rule.method }}</span>
-          <span class="rule-url" :title="rule.url">{{ rule.url }}</span>
+          <span class="rule-url" :title="rule.url">{{ rule.name || rule.url }}</span>
           <span class="rule-status">{{ rule.responseStatus }}</span>
           <button class="del-btn" @click.stop="emit('delete', rule.id)">✕</button>
         </div>
