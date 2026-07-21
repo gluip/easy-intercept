@@ -10,6 +10,7 @@ export interface ModelPricing {
 
 // Ordered longest-prefix-first so more specific models match first
 const GEMINI_PRICING: Array<[string, ModelPricing]> = [
+  ["gemini-3.6-flash",      { inputPerMTok: 1.50,  outputPerMTok: 7.50,  cachedPerMTok: 0.15   }],
   ["gemini-3.5-flash",      { inputPerMTok: 1.50,  outputPerMTok: 9.00,  cachedPerMTok: 0.15   }],
   ["gemini-3.1-pro",        { inputPerMTok: 2.00,  outputPerMTok: 12.00, cachedPerMTok: 0.20   }],
   ["gemini-3.1-flash-lite", { inputPerMTok: 0.25,  outputPerMTok: 1.50,  cachedPerMTok: 0.025  }],
