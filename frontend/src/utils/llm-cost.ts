@@ -10,6 +10,7 @@ export interface ModelPricing {
 
 // Ordered longest-prefix-first so more specific models match first
 const GEMINI_PRICING: Array<[string, ModelPricing]> = [
+  ["gemini-3.6-flash",      { inputPerMTok: 1.50,  outputPerMTok: 7.50,  cachedPerMTok: 0.15   }],
   ["gemini-3.5-flash",      { inputPerMTok: 1.50,  outputPerMTok: 9.00,  cachedPerMTok: 0.15   }],
   ["gemini-3.1-pro",        { inputPerMTok: 2.00,  outputPerMTok: 12.00, cachedPerMTok: 0.20   }],
   ["gemini-3.1-flash-lite", { inputPerMTok: 0.25,  outputPerMTok: 1.50,  cachedPerMTok: 0.025  }],
@@ -38,6 +39,10 @@ const COPILOT_PRICING: Array<[string, ModelPricing]> = [
 
 // Ordered longest-prefix-first; cached = 0.5x input price for OpenAI
 const OPENAI_PRICING: Array<[string, ModelPricing]> = [
+  // gpt-5.6 (Jul 2026) — https://developers.openai.com/api/docs/pricing
+  ["gpt-5.6-sol",   { inputPerMTok: 5.00,  outputPerMTok: 30.00,  cachedPerMTok: 0.50  }],
+  ["gpt-5.6-terra", { inputPerMTok: 2.50,  outputPerMTok: 15.00,  cachedPerMTok: 0.25  }],
+  ["gpt-5.6-luna",  { inputPerMTok: 1.00,  outputPerMTok: 6.00,   cachedPerMTok: 0.10  }],
   // gpt-5.x flagship (May 2026)
   ["gpt-5.5-pro",   { inputPerMTok: 30.00, outputPerMTok: 180.00, cachedPerMTok: 0     }],
   ["gpt-5.5",       { inputPerMTok: 5.00,  outputPerMTok: 30.00,  cachedPerMTok: 0.50  }],

@@ -4,7 +4,7 @@ import type { ProxySession, AutoResponderRule } from "./types";
 import { useProxy } from "./composables/useProxy";
 import { detectLLMProvider } from "./utils/llm-detection";
 import { calcCost, formatCost } from "./utils/llm-cost";
-import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream } from "./utils/llm-stream-parser";
+import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream, isOpenAIResponsesRequest, parseOpenAIResponses } from "./utils/llm-stream-parser";
 import SessionList from "./components/SessionList.vue";
 import SessionDetail from "./components/SessionDetail.vue";
 import SessionViewer from "./components/SessionViewer.vue";
@@ -85,6 +85,11 @@ const selectionStats = computed(() => {
       if (provider === "copilot") {
         const parsed = parseCopilotResponsesStream(s.responseBody);
         p = parsed.promptTokens; r = parsed.responseTokens; c = parsed.cachedTokens;
+        model = parsed.model;
+      } else if (provider === "openai" && isOpenAIResponsesRequest(s.requestBody)) {
+        const parsed = parseOpenAIResponses(s.responseBody);
+        p = parsed.promptTokens; r = parsed.responseTokens;
+        c = parsed.cachedTokens; t = parsed.thoughtTokens;
         model = parsed.model;
       } else {
         let res: any;

@@ -3,7 +3,7 @@ import { computed, ref } from "vue";
 import type { ProxySession } from "../types";
 import { detectLLMProvider } from "../utils/llm-detection";
 import { calcCost, formatCost } from "../utils/llm-cost";
-import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream } from "../utils/llm-stream-parser";
+import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream, isOpenAIResponsesRequest, parseOpenAIResponses } from "../utils/llm-stream-parser";
 
 const props = defineProps<{
   session: ProxySession;
@@ -46,6 +46,7 @@ interface ParsedLLM {
   cachedTokens: number;
   thoughtTokens: number;
   finishReason: string;
+  reasoningEffort?: string;
 }
 
 // ── Parse ──────────────────────────────────────────────────
@@ -138,6 +139,80 @@ function parseOpenAIMessages(
   }
 
   return { turns, system };
+}
+
+/** Normalize OpenAI Responses API input[] into turns + developer/system prompt.
+ *  Flat items: {type:"message", role, content}, {type:"function_call", ...}, {type:"function_call_output", ...}
+ */
+function parseOpenAIResponsesInput(
+  input: Record<string, unknown>[],
+): { turns: GTurn[]; system?: string } {
+  const callIdToName = new Map<string, string>();
+  for (const item of input) {
+    if (item.type === "function_call") callIdToName.set(item.call_id as string, item.name as string);
+  }
+
+  let system: string | undefined;
+  const turns: GTurn[] = [];
+
+  for (const item of input) {
+    const type = (item.type as string | undefined) ?? "message";
+
+    if (type === "message") {
+      const role = item.role as string;
+      const content = item.content;
+      const parts: GPart[] = [];
+      if (typeof content === "string" && content) parts.push({ text: content });
+      else if (Array.isArray(content)) {
+        for (const b of content as Record<string, unknown>[]) {
+          if ((b.type === "input_text" || b.type === "output_text") && b.text) parts.push({ text: b.text as string });
+        }
+      }
+      if (role === "developer" || role === "system") {
+        const text = parts.map((p) => p.text ?? "").join("\n");
+        if (text) system = system ? system + "\n" + text : text;
+        continue;
+      }
+      if (parts.length) turns.push({ role: role === "assistant" ? "model" : "user", parts });
+      continue;
+    }
+
+    if (type === "function_call") {
+      let args: Record<string, unknown> = {};
+      try { args = JSON.parse((item.arguments as string) ?? "{}"); } catch { /* ignore */ }
+      turns.push({ role: "model", parts: [{ functionCall: { id: item.call_id as string, name: item.name as string, args } }] });
+      continue;
+    }
+
+    if (type === "function_call_output") {
+      const callId = item.call_id as string;
+      const name = callIdToName.get(callId) ?? callId;
+      turns.push({ role: "user", parts: [{ functionResponse: { name, response: item.output } }] });
+    }
+  }
+
+  return { turns, system };
+}
+
+/** Normalize OpenAI Responses API output[] into GPart[] (message text, function_call, reasoning summary) */
+function openAIResponsesOutputToParts(output: Record<string, unknown>[]): GPart[] {
+  const parts: GPart[] = [];
+  for (const item of output) {
+    const type = item.type as string;
+    if (type === "message") {
+      for (const c of (item.content ?? []) as Record<string, unknown>[]) {
+        if (c.type === "output_text" && c.text) parts.push({ text: c.text as string });
+      }
+    } else if (type === "function_call") {
+      let args: Record<string, unknown> = {};
+      try { args = JSON.parse((item.arguments as string) ?? "{}"); } catch { /* ignore */ }
+      parts.push({ functionCall: { id: item.call_id as string, name: item.name as string, args } });
+    } else if (type === "reasoning") {
+      const summary = ((item.summary ?? []) as Record<string, unknown>[]).map((s) => (s.text as string) ?? "").join("\n");
+      if (summary) parts.push({ thinking: summary });
+    }
+  }
+  return parts;
 }
 
 const parsed = computed((): ParsedLLM | null => {
@@ -274,6 +349,33 @@ const parsed = computed((): ParsedLLM | null => {
       };
     }
 
+    if (provider.value === "openai" && isOpenAIResponsesRequest(props.session.requestBody)) {
+      const r = parseOpenAIResponses(props.session.responseBody);
+      const { turns, system } = parseOpenAIResponsesInput(req.input ?? []);
+      const responseParts = openAIResponsesOutputToParts(r.output);
+      const responseTurn: GTurn | null = responseParts.length ? { role: "model", parts: responseParts } : null;
+      // Responses API tools are flat {type:"function", name, description, parameters}
+      const responsesTools: ToolDef[] = ((req.tools ?? []) as Record<string, unknown>[]).map((t) => ({
+        name: t.name as string,
+        description: t.description as string | undefined,
+        parameters: t.parameters,
+      }));
+      return {
+        provider: "openai",
+        modelVersion: r.model !== "unknown" ? r.model : (req.model ?? "unknown"),
+        system,
+        turns,
+        responseTurn,
+        tools: responsesTools,
+        promptTokens: r.promptTokens,
+        responseTokens: r.responseTokens,
+        cachedTokens: r.cachedTokens,
+        thoughtTokens: r.thoughtTokens,
+        finishReason: r.status,
+        reasoningEffort: r.reasoningEffort || undefined,
+      };
+    }
+
     if (provider.value === "openai") {
       const u = res.usage ?? {};
       const { turns, system } = parseOpenAIMessages(req.messages ?? []);
@@ -400,6 +502,13 @@ function argPreview(args: Record<string, unknown> | undefined): string {
       <div class="stats-bar">
         <span class="model-name">{{ parsed.modelVersion }}</span>
         <div class="token-pills">
+          <span
+            v-if="parsed.reasoningEffort"
+            class="pill pill-effort"
+            title="Reasoning effort"
+          >
+            🧠 {{ parsed.reasoningEffort }}
+          </span>
           <span class="pill pill-prompt" title="Prompt tokens">
             ↑ {{ parsed.promptTokens.toLocaleString() }}
           </span>
@@ -631,6 +740,11 @@ function argPreview(args: Record<string, unknown> | undefined): string {
 .pill-thoughts {
   background: #2a1e3a;
   color: #c586c0;
+}
+.pill-effort {
+  background: #2a1e3a;
+  color: #c586c0;
+  text-transform: capitalize;
 }
 .pill-response {
   background: #3a2e1e;
