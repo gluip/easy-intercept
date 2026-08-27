@@ -29,6 +29,9 @@ const {
   systemProxyEnabled,
   loadSystemProxy,
   setSystemProxy,
+  availableBrowsers,
+  loadBrowsers,
+  launchBrowser,
 } = useProxy();
 
 const systemProxyBusy = ref(false);
@@ -41,6 +44,19 @@ async function toggleSystemProxy() {
     console.error("Failed to toggle system proxy:", e);
   } finally {
     systemProxyBusy.value = false;
+  }
+}
+
+const browserLaunchBusy = ref(false);
+
+async function launchBrowserById(id: string) {
+  browserLaunchBusy.value = true;
+  try {
+    await launchBrowser(id);
+  } catch (e) {
+    console.error("Failed to launch browser:", e);
+  } finally {
+    browserLaunchBusy.value = false;
   }
 }
 
@@ -238,6 +254,11 @@ onMounted(async () => {
   } catch (e) {
     console.error("Failed to load system proxy state:", e);
   }
+  try {
+    await loadBrowsers();
+  } catch (e) {
+    console.error("Failed to load browser-launch state:", e);
+  }
 });
 </script>
 
@@ -256,6 +277,25 @@ onMounted(async () => {
         <span class="dot" />
         {{ systemProxyEnabled ? "System proxy: ON" : "System proxy: OFF" }}
       </button>
+      <div v-if="availableBrowsers.length" class="browser-launch-group">
+        <button
+          v-for="b in availableBrowsers"
+          :key="b.id"
+          class="browser-launch-btn"
+          :disabled="browserLaunchBusy"
+          @click="launchBrowserById(b.id)"
+          title="Start een geïsoleerd browservenster dat alleen zelf door de proxy gaat (vereist dat de EasyIntercept CA al is geïnstalleerd; het venster start uitgelogd in een vers profiel)"
+        >
+          <svg class="chrome-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <circle cx="12" cy="12" r="4" />
+            <line x1="21.17" y1="8" x2="12" y2="8" />
+            <line x1="3.95" y1="6.06" x2="8.54" y2="14" />
+            <line x1="10.88" y1="21.94" x2="15.46" y2="14" />
+          </svg>
+          Launch proxied {{ b.name }}
+        </button>
+      </div>
     </header>
 
     <div class="tab-bar">
@@ -452,6 +492,35 @@ header small {
 .system-proxy-btn.active .dot {
   background: #4ec9b0;
   box-shadow: 0 0 6px #4ec9b0;
+}
+
+.browser-launch-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.browser-launch-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #3c3c3c;
+  border: 1px solid #555;
+  color: #858585;
+  padding: 5px 12px;
+  border-radius: 3px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+.browser-launch-btn:hover:not(:disabled) {
+  color: #d4d4d4;
+  border-color: #569cd6;
+}
+.browser-launch-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.browser-launch-btn .chrome-icon {
+  flex-shrink: 0;
 }
 
 .toolbar {
