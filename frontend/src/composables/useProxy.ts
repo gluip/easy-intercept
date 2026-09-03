@@ -14,7 +14,6 @@ const systemProxyEnabled = ref(false);
 interface DetectedBrowser {
   id: string;
   name: string;
-  exePath: string;
 }
 
 const availableBrowsers = ref<DetectedBrowser[]>([]);

@@ -158,8 +158,10 @@ app.MapPost("/api/system-proxy", (SystemProxyEnableRequest body, SystemProxyServ
     return Results.Ok(new { enabled = proxy.IsEnabled() });
 });
 
+// Project to id/name only — ExePath is for Launch() internally and would leak
+// local filesystem paths (and the username) to the browser.
 app.MapGet("/api/browser-launch", (BrowserLauncherService launcher) =>
-    Results.Ok(new { browsers = launcher.DetectBrowsers() }));
+    Results.Ok(new { browsers = launcher.DetectBrowsers().Select(b => new { b.Id, b.Name }) }));
 
 app.MapPost("/api/browser-launch", (BrowserLaunchRequest body, BrowserLauncherService launcher) =>
 {
