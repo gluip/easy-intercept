@@ -9,6 +9,7 @@ obj/
 easyntercept-ca.pfx
 easyntercept-ca.crt
 certs/
+browser-profiles/
 .env
 appsettings.Development.json
 appsettings.Local.json

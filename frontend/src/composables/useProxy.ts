@@ -11,6 +11,13 @@ const pendingRule = ref<AutoResponderRule | null>(null);
 
 const systemProxyEnabled = ref(false);
 
+interface DetectedBrowser {
+  id: string;
+  name: string;
+}
+
+const availableBrowsers = ref<DetectedBrowser[]>([]);
+
 const connection = new HubConnectionBuilder()
   .withUrl("/proxy-hub")
   .withAutomaticReconnect()
@@ -111,6 +118,21 @@ async function setSystemProxy(enabled: boolean) {
   systemProxyEnabled.value = data.enabled;
 }
 
+async function loadBrowsers() {
+  const r = await fetch("/api/browser-launch");
+  const data = await r.json();
+  availableBrowsers.value = data.browsers;
+}
+
+async function launchBrowser(browserId: string) {
+  const r = await fetch("/api/browser-launch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ browserId }),
+  });
+  if (!r.ok) throw new Error(await r.text());
+}
+
 export function useProxy() {
   return {
     sessions: readonly(sessions),
@@ -131,5 +153,8 @@ export function useProxy() {
     systemProxyEnabled: readonly(systemProxyEnabled),
     loadSystemProxy,
     setSystemProxy,
+    availableBrowsers: readonly(availableBrowsers),
+    loadBrowsers,
+    launchBrowser,
   };
 }

@@ -4,7 +4,7 @@ import type { ProxySession, AutoResponderRule } from "./types";
 import { useProxy } from "./composables/useProxy";
 import { detectLLMProvider } from "./utils/llm-detection";
 import { calcCost, formatCost } from "./utils/llm-cost";
-import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream, isOpenAIResponsesRequest, parseOpenAIResponses } from "./utils/llm-stream-parser";
+import { extractLLMUsage } from "./utils/llm-usage";
 import SessionList from "./components/SessionList.vue";
 import SessionDetail from "./components/SessionDetail.vue";
 import SessionViewer from "./components/SessionViewer.vue";
@@ -29,6 +29,9 @@ const {
   systemProxyEnabled,
   loadSystemProxy,
   setSystemProxy,
+  availableBrowsers,
+  loadBrowsers,
+  launchBrowser,
 } = useProxy();
 
 const systemProxyBusy = ref(false);
@@ -41,6 +44,19 @@ async function toggleSystemProxy() {
     console.error("Failed to toggle system proxy:", e);
   } finally {
     systemProxyBusy.value = false;
+  }
+}
+
+const browserLaunchBusy = ref(false);
+
+async function launchBrowserById(id: string) {
+  browserLaunchBusy.value = true;
+  try {
+    await launchBrowser(id);
+  } catch (e) {
+    console.error("Failed to launch browser:", e);
+  } finally {
+    browserLaunchBusy.value = false;
   }
 }
 
@@ -79,54 +95,15 @@ const selectionStats = computed(() => {
   for (const s of selected) {
     const provider = detectLLMProvider(s);
     if (!provider || s.responseStatus === 0) continue;
-    try {
-      let p = 0, r = 0, c = 0, t = 0, model = "unknown";
+    const usage = extractLLMUsage(s);
+    if (!usage) continue;
 
-      if (provider === "copilot") {
-        const parsed = parseCopilotResponsesStream(s.responseBody);
-        p = parsed.promptTokens; r = parsed.responseTokens; c = parsed.cachedTokens;
-        model = parsed.model;
-      } else if (provider === "openai" && isOpenAIResponsesRequest(s.requestBody)) {
-        const parsed = parseOpenAIResponses(s.responseBody);
-        p = parsed.promptTokens; r = parsed.responseTokens;
-        c = parsed.cachedTokens; t = parsed.thoughtTokens;
-        model = parsed.model;
-      } else {
-        let res: any;
-        if (isStreamingResponse(s.responseBody)) {
-          if (provider === "openai") res = parseOpenAIStream(s.responseBody);
-          else if (provider === "anthropic") res = parseAnthropicStream(s.responseBody);
-          else res = JSON.parse(s.responseBody);
-        } else {
-          res = JSON.parse(s.responseBody);
-        }
-
-        if (provider === "gemini") {
-          const u = res.usageMetadata ?? {};
-          p = u.promptTokenCount ?? 0; r = u.candidatesTokenCount ?? 0;
-          c = u.cachedContentTokenCount ?? 0; t = u.thoughtsTokenCount ?? 0;
-          model = res.modelVersion ?? "unknown";
-        } else if (provider === "anthropic") {
-          const u = res.usage ?? {};
-          p = u.input_tokens ?? 0; r = u.output_tokens ?? 0;
-          c = u.cache_read_input_tokens ?? 0;
-          const req = JSON.parse(s.requestBody);
-          model = res.model ?? req.model ?? "unknown";
-        } else if (provider === "openai") {
-          const u = res.usage ?? {};
-          p = u.prompt_tokens ?? 0; r = u.completion_tokens ?? 0;
-          c = (u.prompt_tokens_details ?? {}).cached_tokens ?? 0;
-          const req = JSON.parse(s.requestBody);
-          model = res.model ?? req.model ?? "unknown";
-        }
-      }
-
-      promptTokens  += p; responseTokens += r;
-      cachedTokens  += c; thoughtTokens  += t;
-      const cost = calcCost(provider, model, p, r, c, t);
-      if (cost) totalCost += cost.total;
-      llmCount++;
-    } catch { /* skip */ }
+    const { model, promptTokens: p, responseTokens: r, cachedTokens: c, thoughtTokens: t } = usage;
+    promptTokens  += p; responseTokens += r;
+    cachedTokens  += c; thoughtTokens  += t;
+    const cost = calcCost(provider, model, p, r, c, t);
+    if (cost) totalCost += cost.total;
+    llmCount++;
   }
 
   return { count: selected.length, llmCount, promptTokens, responseTokens, cachedTokens, thoughtTokens, totalCost, totalWaitTime, wallClockTime };
@@ -238,6 +215,11 @@ onMounted(async () => {
   } catch (e) {
     console.error("Failed to load system proxy state:", e);
   }
+  try {
+    await loadBrowsers();
+  } catch (e) {
+    console.error("Failed to load browser-launch state:", e);
+  }
 });
 </script>
 
@@ -256,6 +238,25 @@ onMounted(async () => {
         <span class="dot" />
         {{ systemProxyEnabled ? "System proxy: ON" : "System proxy: OFF" }}
       </button>
+      <div v-if="availableBrowsers.length" class="browser-launch-group">
+        <button
+          v-for="b in availableBrowsers"
+          :key="b.id"
+          class="browser-launch-btn"
+          :disabled="browserLaunchBusy"
+          @click="launchBrowserById(b.id)"
+          title="Start een geïsoleerd browservenster dat alleen zelf door de proxy gaat (vereist dat de EasyIntercept CA al is geïnstalleerd; het venster start uitgelogd in een vers profiel)"
+        >
+          <svg class="chrome-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <circle cx="12" cy="12" r="4" />
+            <line x1="21.17" y1="8" x2="12" y2="8" />
+            <line x1="3.95" y1="6.06" x2="8.54" y2="14" />
+            <line x1="10.88" y1="21.94" x2="15.46" y2="14" />
+          </svg>
+          Launch proxied {{ b.name }}
+        </button>
+      </div>
     </header>
 
     <div class="tab-bar">
@@ -452,6 +453,35 @@ header small {
 .system-proxy-btn.active .dot {
   background: #4ec9b0;
   box-shadow: 0 0 6px #4ec9b0;
+}
+
+.browser-launch-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.browser-launch-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #3c3c3c;
+  border: 1px solid #555;
+  color: #858585;
+  padding: 5px 12px;
+  border-radius: 3px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+.browser-launch-btn:hover:not(:disabled) {
+  color: #d4d4d4;
+  border-color: #569cd6;
+}
+.browser-launch-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.browser-launch-btn .chrome-icon {
+  flex-shrink: 0;
 }
 
 .toolbar {

@@ -10,7 +10,11 @@ export interface ModelPricing {
 
 // Ordered longest-prefix-first so more specific models match first
 const GEMINI_PRICING: Array<[string, ModelPricing]> = [
-  ["gemini-3.6-flash",      { inputPerMTok: 1.50,  outputPerMTok: 7.50,  cachedPerMTok: 0.15   }],
+  // Gemini 3.6/3.7/3.8 Flash share an introductory rate through 2026-12-31;
+  // on 2027-01-01 it doubles to 1.50 / 7.50 / 0.15.
+  ["gemini-3.8-flash",      { inputPerMTok: 0.75,  outputPerMTok: 3.75,  cachedPerMTok: 0.075  }],
+  ["gemini-3.7-flash",      { inputPerMTok: 0.75,  outputPerMTok: 3.75,  cachedPerMTok: 0.075  }],
+  ["gemini-3.6-flash",      { inputPerMTok: 0.75,  outputPerMTok: 3.75,  cachedPerMTok: 0.075  }],
   ["gemini-3.5-flash",      { inputPerMTok: 1.50,  outputPerMTok: 9.00,  cachedPerMTok: 0.15   }],
   ["gemini-3.1-pro",        { inputPerMTok: 2.00,  outputPerMTok: 12.00, cachedPerMTok: 0.20   }],
   ["gemini-3.1-flash-lite", { inputPerMTok: 0.25,  outputPerMTok: 1.50,  cachedPerMTok: 0.025  }],

@@ -34,6 +34,7 @@ builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<CertificateService>();
 builder.Services.AddSingleton<AutoResponderStore>();
 builder.Services.AddSingleton<SystemProxyService>();
+builder.Services.AddSingleton<BrowserLauncherService>();
 builder.Services.AddHostedService<ProxyServer>();
 
 var app = builder.Build();
@@ -157,6 +158,24 @@ app.MapPost("/api/system-proxy", (SystemProxyEnableRequest body, SystemProxyServ
     return Results.Ok(new { enabled = proxy.IsEnabled() });
 });
 
+// Project to id/name only — ExePath is for Launch() internally and would leak
+// local filesystem paths (and the username) to the browser.
+app.MapGet("/api/browser-launch", (BrowserLauncherService launcher) =>
+    Results.Ok(new { browsers = launcher.DetectBrowsers().Select(b => new { b.Id, b.Name }) }));
+
+app.MapPost("/api/browser-launch", (BrowserLaunchRequest body, BrowserLauncherService launcher) =>
+{
+    try
+    {
+        launcher.Launch(body.BrowserId);
+        return Results.Ok();
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(ex.Message);
+    }
+});
+
 app.MapGet("/ca", (CertificateService certs) =>
 {
     var path = certs.CaCertPath;
@@ -211,4 +230,5 @@ app.MapGet("/install", async (HttpContext ctx) =>
 await app.RunAsync();
 
 record SystemProxyEnableRequest(bool Enabled);
+record BrowserLaunchRequest(string BrowserId);
 record BrunoExportRequest(Guid[] SessionIds, string CollectionPath, string? Name = null);
