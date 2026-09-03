@@ -7,6 +7,8 @@ import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopi
 import { isElasticsearchRequest, detectESOperation, parseESIndex } from "../utils/es-detection";
 import { isGraphQLRequest, parseGraphQLRequest, parseGraphQLResponse, getOperationName, getOperationType, getTracingDurationMs } from "../utils/graphql-detection";
 import { calcCost, formatCost } from "../utils/llm-cost";
+import { extractLLMUsage } from "../utils/llm-usage";
+import { isGeminiInteractionsRequest, parseGeminiInteractionsResponse, geminiInteractionsPreviewText, geminiInteractionsToolCallNames, geminiInteractionsTrailingResults } from "../utils/gemini-interactions";
 import { detectRequestKind, REQUEST_KIND_LABELS, REQUEST_KIND_ICONS, type RequestKind } from "../utils/request-kind-detection";
 
 const props = defineProps<{
@@ -444,6 +446,11 @@ function llmPreview(s: ProxySession): string | null {
   const provider = detectLLMProvider(s);
   if (!provider) return null;
   try {
+    if (provider === "gemini" && isGeminiInteractionsRequest(s.requestBody)) {
+      const r = parseGeminiInteractionsResponse(s.responseBody);
+      return r ? geminiInteractionsPreviewText(r.steps)?.trim() || null : null;
+    }
+
     if (provider === "openai" && isOpenAIResponsesRequest(s.requestBody)) {
       const r = parseOpenAIResponses(s.responseBody);
       const msg = r.output.find((o) => o.type === "message") as { content?: { type: string; text?: string }[] } | undefined;
@@ -486,6 +493,11 @@ function llmToolCalls(s: ProxySession): string[] {
   const provider = detectLLMProvider(s);
   if (!provider) return [];
   try {
+    if (provider === "gemini" && isGeminiInteractionsRequest(s.requestBody)) {
+      const r = parseGeminiInteractionsResponse(s.responseBody);
+      return r ? geminiInteractionsToolCallNames(r.steps) : [];
+    }
+
     if (provider === "openai" && isOpenAIResponsesRequest(s.requestBody)) {
       const r = parseOpenAIResponses(s.responseBody);
       return r.output
@@ -530,6 +542,13 @@ function llmToolResults(s: ProxySession): { label: string; snippet: string }[] {
   if (!provider) return [];
   try {
     const req = JSON.parse(s.requestBody);
+    if (provider === "gemini" && isGeminiInteractionsRequest(s.requestBody)) {
+      // Trailing run of function_result items at the end of input
+      return geminiInteractionsTrailingResults(req.input ?? []).map((text) => ({
+        label: text.slice(0, 60),
+        snippet: text,
+      }));
+    }
     if (provider === "gemini") {
       // Find the last user turn that contains functionResponse parts
       const contents: { role: string; parts?: unknown[] }[] = req.contents ?? [];
@@ -643,7 +662,8 @@ function convFingerprint(s: ProxySession): string | null {
   try {
     const req = JSON.parse(s.requestBody);
     let msgs: unknown[] = [];
-    if (provider === "gemini") msgs = req.contents ?? [];
+    if (provider === "gemini" && isGeminiInteractionsRequest(s.requestBody)) msgs = req.input ?? [];
+    else if (provider === "gemini") msgs = req.contents ?? [];
     else if (provider === "openai" && isOpenAIResponsesRequest(s.requestBody)) msgs = req.input ?? [];
     else msgs = req.messages ?? [];
     if (msgs.length === 0) return null;
@@ -720,63 +740,17 @@ function graphqlPreview(s: ProxySession): string | null {
 
 function llmCost(s: ProxySession): string | null {
   const provider = detectLLMProvider(s);
-  if (!provider) return null;
-  try {
-    let promptTokens = 0, responseTokens = 0, cachedTokens = 0, thoughtTokens = 0;
-    let modelVersion = "unknown";
-
-    if (provider === "copilot") {
-      const parsed = parseCopilotResponsesStream(s.responseBody);
-      promptTokens   = parsed.promptTokens;
-      responseTokens = parsed.responseTokens;
-      cachedTokens   = parsed.cachedTokens;
-      modelVersion   = parsed.model;
-    } else if (provider === "openai" && isOpenAIResponsesRequest(s.requestBody)) {
-      const r = parseOpenAIResponses(s.responseBody);
-      promptTokens   = r.promptTokens;
-      responseTokens = r.responseTokens;
-      cachedTokens   = r.cachedTokens;
-      thoughtTokens  = r.thoughtTokens;
-      modelVersion   = r.model;
-    } else {
-      let res: any;
-      if (isStreamingResponse(s.responseBody)) {
-        if (provider === "openai") res = parseOpenAIStream(s.responseBody);
-        else if (provider === "anthropic") res = parseAnthropicStream(s.responseBody);
-        else res = JSON.parse(s.responseBody);
-      } else {
-        res = JSON.parse(s.responseBody);
-      }
-
-      if (provider === "gemini") {
-        const u = res.usageMetadata ?? {};
-        promptTokens  = u.promptTokenCount ?? 0;
-        responseTokens = u.candidatesTokenCount ?? 0;
-        cachedTokens  = u.cachedContentTokenCount ?? 0;
-        thoughtTokens = u.thoughtsTokenCount ?? 0;
-        modelVersion  = res.modelVersion ?? "unknown";
-      } else if (provider === "anthropic") {
-        const u = res.usage ?? {};
-        promptTokens  = u.input_tokens ?? 0;
-        responseTokens = u.output_tokens ?? 0;
-        cachedTokens  = u.cache_read_input_tokens ?? 0;
-        const req = JSON.parse(s.requestBody);
-        modelVersion  = res.model ?? req.model ?? "unknown";
-      } else if (provider === "openai") {
-        const u = res.usage ?? {};
-        promptTokens  = u.prompt_tokens ?? 0;
-        responseTokens = u.completion_tokens ?? 0;
-        cachedTokens  = (u.prompt_tokens_details ?? {}).cached_tokens ?? 0;
-        const req = JSON.parse(s.requestBody);
-        modelVersion  = res.model ?? req.model ?? "unknown";
-      }
-    }
-
-    const cost = calcCost(provider, modelVersion, promptTokens, responseTokens, cachedTokens, thoughtTokens);
-    return cost ? formatCost(cost) : null;
-  } catch {
-    return null;
-  }
+  const usage = extractLLMUsage(s);
+  if (!provider || !usage) return null;
+  const cost = calcCost(
+    provider,
+    usage.model,
+    usage.promptTokens,
+    usage.responseTokens,
+    usage.cachedTokens,
+    usage.thoughtTokens,
+  );
+  return cost ? formatCost(cost) : null;
 }
 </script>
 

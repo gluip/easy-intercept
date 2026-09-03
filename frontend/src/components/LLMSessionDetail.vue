@@ -4,6 +4,8 @@ import type { ProxySession } from "../types";
 import { detectLLMProvider } from "../utils/llm-detection";
 import { calcCost, formatCost } from "../utils/llm-cost";
 import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream, isOpenAIResponsesRequest, parseOpenAIResponses } from "../utils/llm-stream-parser";
+import { isGeminiInteractionsRequest, parseGeminiInteractionsRequest, parseGeminiInteractionsResponse, geminiInteractionsStepsToParts } from "../utils/gemini-interactions";
+import type { GPart, GTurn, ToolDef, ParsedLLM } from "../utils/llm-types";
 
 const props = defineProps<{
   session: ProxySession;
@@ -12,42 +14,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   openViewer: [session: ProxySession, tab: "request" | "response"];
 }>();
-
-// ── Types ──────────────────────────────────────────────────
-
-interface GPart {
-  text?: string;
-  functionCall?: { id?: string; name: string; args: Record<string, unknown> };
-  functionResponse?: { name: string; response: unknown };
-  thoughtSignature?: string;
-  thinking?: string;
-}
-
-interface GTurn {
-  role: "user" | "model";
-  parts: GPart[];
-}
-
-interface ToolDef {
-  name: string;
-  description?: string;
-  parameters?: unknown; // JSON schema
-}
-
-interface ParsedLLM {
-  provider: "gemini" | "anthropic" | "openai" | "copilot";
-  modelVersion: string;
-  system?: string;
-  turns: GTurn[];
-  responseTurn: GTurn | null;
-  tools: ToolDef[];
-  promptTokens: number;
-  responseTokens: number;
-  cachedTokens: number;
-  thoughtTokens: number;
-  finishReason: string;
-  reasoningEffort?: string;
-}
 
 // ── Parse ──────────────────────────────────────────────────
 
@@ -269,6 +235,27 @@ const parsed = computed((): ParsedLLM | null => {
         cachedTokens: cp.cachedTokens,
         thoughtTokens: 0,
         finishReason: "",
+      };
+    }
+
+    if (provider.value === "gemini" && isGeminiInteractionsRequest(props.session.requestBody)) {
+      // null when the body isn't usable — fall through to the raw-body fallback
+      const r = parseGeminiInteractionsResponse(props.session.responseBody);
+      if (!r) return null;
+      const { turns, system, tools } = parseGeminiInteractionsRequest(req);
+      const responseParts = geminiInteractionsStepsToParts(r.steps);
+      return {
+        provider: "gemini",
+        modelVersion: r.model !== "unknown" ? r.model : (req.model ?? "unknown"),
+        system,
+        turns,
+        responseTurn: responseParts.length ? { role: "model", parts: responseParts } : null,
+        tools,
+        promptTokens: r.promptTokens,
+        responseTokens: r.responseTokens,
+        cachedTokens: r.cachedTokens,
+        thoughtTokens: r.thoughtTokens,
+        finishReason: r.status,
       };
     }
 
