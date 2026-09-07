@@ -34,6 +34,13 @@ Knobs (environment variables): `W`/`H` viewport (default 1280×720), `DRAG` extr
 (default 90), `FPS` (5), `TOTAL` seconds (24), `KEYFRAMES=1` to also write a few PNGs for
 inspection, `KEEP_APP=1` to leave the app running afterwards.
 
+## The cursor
+
+Headless Chrome draws no mouse pointer, so `record.js` injects one into the page: an arrow that
+follows Playwright's real mouse position, with a ripple on click. Clicks glide to their target over
+~0.5 s so the movement is visible at 5 fps; the timeline actions run without blocking the capture
+loop for the same reason.
+
 ## How the GIF stays small
 
 Frames share one global 255-colour palette and every frame after the first only stores the pixels

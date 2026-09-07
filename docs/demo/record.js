@@ -84,6 +84,49 @@ function send(name) {
     "-x", PROXY, "--cacert", CA, "--ssl-no-revoke", ...REQUESTS[name]], { stdio: "ignore" });
 }
 
+// ---- fake cursor -----------------------------------------------------------------------------
+// Headless Chrome does not draw the OS cursor. This injects an arrow that follows the real
+// Playwright mouse position, plus a ripple on mousedown, and makes clicks glide to their target
+// so the movement is visible at 5 fps.
+
+async function installCursor(page) {
+  await page.evaluate(() => {
+    const cur = document.createElement("div");
+    cur.id = "demo-cursor";
+    cur.innerHTML = `<svg width="22" height="28" viewBox="0 0 20 26"><path d="M1 1 L1 19 L6 14.5 L9.5 22.5 L12.6 21 L9.2 13 L16 13 Z" fill="#fff" stroke="#000" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+    Object.assign(cur.style, { position: "fixed", left: "0", top: "0", zIndex: "2147483647", pointerEvents: "none",
+      filter: "drop-shadow(0 1px 2px rgba(0,0,0,.6))", transform: "translate(-100px,-100px)" });
+    document.body.appendChild(cur);
+    const style = document.createElement("style");
+    style.textContent = `@keyframes demo-ripple { from { transform: translate(-50%,-50%) scale(.3); opacity: .9 } to { transform: translate(-50%,-50%) scale(1); opacity: 0 } }
+      .demo-ripple { position: fixed; width: 36px; height: 36px; border-radius: 50%; border: 2px solid #4fc1ff; background: rgba(79,193,255,.25);
+        pointer-events: none; z-index: 2147483646; animation: demo-ripple .45s ease-out forwards; }`;
+    document.head.appendChild(style);
+    document.addEventListener("mousemove", (e) => { cur.style.transform = `translate(${e.clientX - 1}px, ${e.clientY - 1}px)`; }, true);
+    document.addEventListener("mousedown", (e) => {
+      const r = document.createElement("div"); r.className = "demo-ripple";
+      r.style.left = e.clientX + "px"; r.style.top = e.clientY + "px";
+      document.body.appendChild(r); setTimeout(() => r.remove(), 500);
+    }, true);
+  });
+}
+
+const mouse = { x: 0, y: 0 };
+async function glideTo(page, x, y, ms = 450, steps = 12) {
+  const sx = mouse.x, sy = mouse.y;
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps, e = 1 - Math.pow(1 - t, 3);          // ease-out
+    await page.mouse.move(sx + (x - sx) * e, sy + (y - sy) * e);
+    await sleep(ms / steps);
+  }
+  mouse.x = x; mouse.y = y;
+}
+async function clickOn(page, locator) {
+  const box = await locator.first().boundingBox();
+  await glideTo(page, box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down(); await sleep(70); await page.mouse.up();
+}
+
 // ---- recording -------------------------------------------------------------------------------
 
 async function record() {
@@ -101,23 +144,27 @@ async function record() {
   await page.mouse.move(cx + DRAG, cy, { steps: 6 }); await page.mouse.up();
   await page.waitForTimeout(400);
 
+  await installCursor(page);
+  mouse.x = cx + DRAG; mouse.y = cy;
+  await glideTo(page, W * 0.3, H * 0.55, 300);      // park over the empty list before frame 0
+
   const timelineToggle = page.getByRole("checkbox", { name: /Timeline/ });
   const timeline = [
     // requests arrive; the waterfall goes on while some are still in flight so its bars grow live
     [0.8,  () => send("github")],
     [2.2,  () => send("openai1")],
-    [3.6,  () => timelineToggle.check()],
+    [3.2,  () => clickOn(page, timelineToggle)],
     [4.0,  () => send("anthropic")],               // 1.4 s mock latency
     [5.6,  () => send("gemini")],
     [7.0,  () => send("openai2")],                 // 2.1 s mock latency: pending state + growing bar
-    [10.6, () => timelineToggle.uncheck()],
+    [10.2, () => clickOn(page, timelineToggle)],
     // LLM-only columns and the chat-transcript view
-    [11.2, () => page.getByRole("checkbox", { name: "LLM requests only" }).check()],
-    [12.4, () => page.locator("tr[data-id]", { hasText: "api.anthropic.com" }).first().click()],
-    [15.6, () => page.locator("tr[data-id]", { hasText: "The 502" }).first().click()],
+    [11.0, () => clickOn(page, page.getByRole("checkbox", { name: "LLM requests only" }))],
+    [12.2, () => clickOn(page, page.locator("tr[data-id]", { hasText: "api.anthropic.com" }))],
+    [15.4, () => clickOn(page, page.locator("tr[data-id]", { hasText: "The 502" }))],
     // turn the captured response into a mock rule (form only; nothing is saved)
-    [18.2, () => page.getByRole("button", { name: /Add to Auto Responder/ }).click()],
-    [20.6, () => page.getByRole("button", { name: /Format/ }).click()],
+    [18.0, () => clickOn(page, page.getByRole("button", { name: /Add to Auto Responder/ }))],
+    [20.4, () => clickOn(page, page.getByRole("button", { name: /Format/ }))],
   ];
 
   const frames = [];
@@ -125,7 +172,12 @@ async function record() {
   let next = 0;
   for (;;) {
     const t = (Date.now() - t0) / 1000;
-    while (next < timeline.length && t >= timeline[next][0]) { await timeline[next][1](); next++; }
+    // Actions are not awaited: a gliding click takes ~0.5 s and screenshots must keep flowing
+    // during it, otherwise the cursor movement itself never ends up in a frame.
+    while (next < timeline.length && t >= timeline[next][0]) {
+      Promise.resolve(timeline[next][1]()).catch((e) => console.error("timeline action failed:", e));
+      next++;
+    }
     if (t > TOTAL) break;
     const png = await page.screenshot({ type: "png" });
     frames.push({ png, t: (Date.now() - t0) / 1000 });
@@ -137,7 +189,7 @@ async function record() {
 
   if (KEYFRAMES) {
     const keyAt = (sec) => frames.reduce((b, f) => (Math.abs(f.t - sec) < Math.abs(b.t - sec) ? f : b));
-    for (const sec of [8.5, 11.8, 14, 17, 19.5, 23]) fs.writeFileSync(path.join(__dirname, `key-${sec}s.png`), keyAt(sec).png);
+    for (const sec of [3.4, 8.5, 12.4, 14, 18.2, 23]) fs.writeFileSync(path.join(__dirname, `key-${sec}s.png`), keyAt(sec).png);
   }
   return frames;
 }
