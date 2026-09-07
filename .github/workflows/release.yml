@@ -3,9 +3,6 @@ name: Release
 on:
   push:
     tags: ["v*"]
-    # TEMPORARY: exercises the full build on this branch without publishing anything
-    # (the release step below only runs for tags). Remove before merging to main.
-    branches: ["feature/add-installer"]
   workflow_dispatch:
     inputs:
       version:
