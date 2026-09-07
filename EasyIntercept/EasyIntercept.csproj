@@ -1,10 +1,36 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
+    <!-- Windows gets a desktop build (tray icon, no console window); other OSes stay a plain console app. -->
     <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework Condition="$([MSBuild]::IsOSPlatform('Windows'))">net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>EasyIntercept</RootNamespace>
+    <AssemblyName>EasyIntercept</AssemblyName>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+    <Version>0.1.0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <!-- Shown in the exe's file properties (Details tab) -->
+    <Product>EasyIntercept</Product>
+    <Authors>Martijn Muurman</Authors>
+    <Company>Martijn Muurman</Company>
+    <Copyright>Copyright © Martijn Muurman. MIT License.</Copyright>
+    <Description>Local HTTP/HTTPS debugging proxy with LLM-aware traffic inspection.</Description>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <IsTransformWebConfigDisabled>true</IsTransformWebConfigDisabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Runtime data that may exist in the project folder during development must never be published. -->
+    <Content Remove="sessions\**;auto-responder\**;browser-profiles\**;certs\**" />
+    <None Remove="sessions\**;auto-responder\**;browser-profiles\**;certs\**" />
+    <Compile Remove="sessions\**;auto-responder\**;browser-profiles\**;certs\**" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows'">
+    <UseWindowsForms>true</UseWindowsForms>
+    <OutputType>WinExe</OutputType>
   </PropertyGroup>
 
   <ItemGroup>

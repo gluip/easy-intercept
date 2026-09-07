@@ -26,12 +26,11 @@ public class AutoResponderStore : IDisposable
     private readonly string _dir;
     private static readonly JsonSerializerOptions _json = new() { WriteIndented = true };
     private readonly FileSystemWatcher _watcher;
-    private Timer? _debounceTimer;
+    private System.Threading.Timer? _debounceTimer;
 
-    public AutoResponderStore(IConfiguration config)
+    public AutoResponderStore(AppPaths paths)
     {
-        var raw = config["AutoResponderPath"] ?? "auto-responder";
-        _dir = Path.IsPathRooted(raw) ? raw : Path.Combine(Directory.GetCurrentDirectory(), raw);
+        _dir = paths.AutoResponder;
         Directory.CreateDirectory(_dir);
         LoadFromDisk();
 
@@ -50,7 +49,7 @@ public class AutoResponderStore : IDisposable
     private void OnDiskChanged(object sender, FileSystemEventArgs e)
     {
         _debounceTimer?.Dispose();
-        _debounceTimer = new Timer(_ => ReloadFromDisk(), null, 300, Timeout.Infinite);
+        _debounceTimer = new System.Threading.Timer(_ => ReloadFromDisk(), null, 300, Timeout.Infinite);
     }
 
     private void ReloadFromDisk()

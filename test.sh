@@ -1,107 +1,140 @@
-#!/usr/bin/env zsh
-set -e
+#!/usr/bin/env bash
+#
+# EasyIntercept smoke tests — run against an already-running instance.
+#
+#   ./test.sh                     # standard ports (UI 1337, proxy 9999)
+#   UI_PORT=8080 ./test.sh        # if you changed UiPort
+#
+# The HTTPS tests need the EasyIntercept CA to be trusted by the OS
+# (install-ca.sh / install-ca.ps1, or EasyIntercept.exe --install-ca).
+#
+# No `set -e` on purpose: the script keeps its own pass/fail tally and must
+# report every failing check instead of aborting at the first one.
 
+API="http://localhost:${UI_PORT:-1337}"
+# Fixed in the app (Hosting/StartupOptions.ProxyPort); not configurable.
 PROXY="http://localhost:9999"
-API="http://localhost:8080"
 PASS=0
 FAIL=0
 
-pass() { echo "✓ $1"; PASS=$((PASS+1)); }
-fail() { echo "✗ $1"; FAIL=$((FAIL+1)); }
+pass() { echo "✓ $1"; PASS=$((PASS + 1)); }
+fail() { echo "✗ $1"; FAIL=$((FAIL + 1)); }
+
+# curl built against Schannel (Windows / Git Bash) insists on a revocation check, which
+# certificates minted by a local intercepting proxy can never satisfy. macOS curl does not.
+TLS_OPTS=()
+if curl --version | head -1 | grep -qi schannel; then
+  TLS_OPTS=(--ssl-no-revoke)
+fi
+
+# check <description> <command...> — passes when the command succeeds
+check() {
+  local desc="$1"
+  shift
+  if "$@" >/dev/null 2>&1; then pass "$desc"; else fail "$desc"; fi
+}
+
+# json <js-expression over `d`> — reads stdin, prints a value, empty on parse failure.
+# Uses node (already required to build the frontend) so this runs on macOS and Git Bash alike.
+json() {
+  node -e "
+    let s = '';
+    process.stdin.on('data', c => s += c).on('end', () => {
+      try { const d = JSON.parse(s); console.log($1); } catch (e) { process.exit(1); }
+    });
+  " 2>/dev/null
+}
 
 echo "=== EasyIntercept smoke tests ==="
+echo "  UI:    $API"
+echo "  proxy: $PROXY"
 echo ""
 
-# 1. Web UI reachable
-if curl -sf --max-time 3 "$API/" -o /dev/null; then
-  pass "Web UI reachable ($API/)"
+# --- Web UI and API ---
+
+check "Web UI reachable ($API/)" curl -sf --max-time 3 "$API/" -o /dev/null
+
+INFO=$(curl -sf --max-time 3 "$API/api/info")
+INFO_PORTS=$(echo "$INFO" | json "d.uiPort + ':' + d.proxyPort")
+if [[ -n "$INFO_PORTS" ]]; then
+  pass "/api/info reports ports $INFO_PORTS"
+  echo "    version: $(echo "$INFO" | json "d.version")"
 else
-  fail "Web UI not reachable"
+  fail "/api/info did not return usable JSON"
 fi
 
-# 2. Sessions API
-SESSIONS=$(curl -sf --max-time 3 "$API/api/sessions")
-if [[ $? -eq 0 ]]; then
-  pass "Sessions API returns JSON"
+SESSION_COUNT=$(curl -sf --max-time 3 "$API/api/sessions" | json "d.length")
+if [[ -n "$SESSION_COUNT" ]]; then
+  pass "Sessions API returns a JSON array ($SESSION_COUNT sessions)"
 else
-  fail "Sessions API unreachable"
+  fail "Sessions API unreachable or not an array"
 fi
 
-# 3. HTTP proxy — forward request
+RULE_COUNT=$(curl -sf --max-time 3 "$API/api/auto-responders" | json "d.length")
+if [[ -n "$RULE_COUNT" ]]; then
+  pass "Auto-responder API returns a JSON array ($RULE_COUNT rules)"
+else
+  fail "Auto-responder API unreachable or not an array"
+fi
+
+BROWSERS=$(curl -sf --max-time 3 "$API/api/browser-launch" | json "d.browsers.length")
+if [[ -n "$BROWSERS" ]]; then
+  pass "Browser-launch API returns a browser list ($BROWSERS detected)"
+else
+  fail "Browser-launch API unreachable or malformed"
+fi
+
+check "System-proxy API readable" curl -sf --max-time 3 "$API/api/system-proxy" -o /dev/null
+check "Mobile CA install page served (/install)" curl -sf --max-time 3 "$API/install" -o /dev/null
+
+# --- HTTP proxying ---
+
+BEFORE=${SESSION_COUNT:-0}
+
 BODY=$(curl -sf --max-time 20 -x "$PROXY" http://httpbin.org/get)
 if echo "$BODY" | grep -q '"url"'; then
   pass "HTTP proxy forwards request (httpbin.org/get)"
 else
-  fail "HTTP proxy did not return expected response"
+  fail "HTTP proxy did not return the expected response"
 fi
 
-# 4. Session was stored
-COUNT=$(curl -sf --max-time 3 "$API/api/sessions" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d))")
-if [[ $COUNT -gt 0 ]]; then
-  pass "Session stored in memory ($COUNT sessions)"
+AFTER=$(curl -sf --max-time 3 "$API/api/sessions" | json "d.length")
+if [[ -n "$AFTER" && "$AFTER" -gt "$BEFORE" ]]; then
+  pass "Proxied request was captured as a session ($BEFORE → $AFTER)"
 else
-  fail "No sessions stored after request"
+  fail "Session count did not grow after a proxied request"
 fi
 
-# 5. Pin a session and verify pinned response is returned
-SESSION_ID=$(curl -sf --max-time 3 "$API/api/sessions" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['id']) if d else print('')")
-SESSION_URL=$(curl -sf --max-time 3 "$API/api/sessions" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['url']) if d else print('')")
+# --- CA certificate ---
 
-if [[ -n "$SESSION_ID" ]]; then
-  PIN_RESULT=$(curl -sf --max-time 3 -X POST "$API/api/sessions/$SESSION_ID/pin")
-  if echo "$PIN_RESULT" | grep -q "pinned"; then
-    pass "Pin session ($SESSION_ID)"
-
-    # Verify pinned response is served
-    PINNED_HEADER=$(curl -sI --max-time 20 -x "$PROXY" "$SESSION_URL" | grep -i "X-EasyIntercept-Pinned" || true)
-    if [[ -n "$PINNED_HEADER" ]]; then
-      pass "Pinned response served for $SESSION_URL"
-    else
-      fail "Pinned response not detected (header missing)"
-    fi
-
-    # Unpin
-    curl -sf --max-time 3 -X DELETE "$API/api/pins?url=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote('$SESSION_URL', safe=''))")" -o /dev/null
-    pass "Unpin session"
-  else
-    fail "Pin request failed"
-  fi
-else
-  fail "No session to pin"
-fi
-
-# --- HTTPS tests ---
-
-# 8. CA cert endpoint
-CA_CERT=$(curl -sf --max-time 3 -o /tmp/easyntercept-ca.crt "$API/ca" && echo "ok")
-if [[ "$CA_CERT" == "ok" ]] && head -1 /tmp/easyntercept-ca.crt | grep -q "BEGIN CERTIFICATE"; then
+CA_FILE=$(mktemp)
+if curl -sf --max-time 3 -o "$CA_FILE" "$API/ca" && head -1 "$CA_FILE" | grep -q "BEGIN CERTIFICATE"; then
   pass "CA cert downloadable (/ca endpoint)"
 else
   fail "CA cert endpoint broken"
 fi
+rm -f "$CA_FILE"
 
-# 9. HTTPS proxy — forward request (relies on CA being installed in system keychain)
-HTTPS_BODY=$(curl -sf --max-time 20 -x "$PROXY" https://httpbin.org/get)
+# --- HTTPS proxying (requires the CA to be trusted) ---
+
+HTTPS_BODY=$(curl -sf --max-time 20 "${TLS_OPTS[@]}" -x "$PROXY" https://httpbin.org/get)
 if echo "$HTTPS_BODY" | grep -q '"url"'; then
   pass "HTTPS proxy forwards request (httpbin.org/get)"
 else
-  fail "HTTPS proxy did not return expected response"
+  fail "HTTPS proxy did not return the expected response — is the CA trusted?"
 fi
 
-# 10. HTTPS session was stored
-HTTPS_COUNT=$(curl -sf --max-time 3 "$API/api/sessions" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len([s for s in d if s['url'].startswith('https://')]))")
-if [[ $HTTPS_COUNT -gt 0 ]]; then
-  pass "HTTPS session stored in memory ($HTTPS_COUNT sessions)"
-else
-  fail "No HTTPS sessions stored"
-fi
-
-
-HTTPS_BODY=$(curl -sf --max-time 20 -x "$PROXY" https://nos.nl)
-if echo "$HTTPS_BODY" | grep -q 'nos'; then
+if curl -sf --max-time 20 "${TLS_OPTS[@]}" -x "$PROXY" https://nos.nl | grep -q 'nos'; then
   pass "HTTPS proxy forwards request (nos.nl)"
 else
-  fail "HTTPS proxy did not return expected response (nos.nl)"
+  fail "HTTPS proxy did not return the expected response (nos.nl)"
+fi
+
+HTTPS_COUNT=$(curl -sf --max-time 3 "$API/api/sessions" | json "d.filter(s => s.url.startsWith('https://')).length")
+if [[ -n "$HTTPS_COUNT" && "$HTTPS_COUNT" -gt 0 ]]; then
+  pass "HTTPS sessions stored ($HTTPS_COUNT)"
+else
+  fail "No HTTPS sessions stored"
 fi
 
 echo ""
