@@ -1,0 +1,13 @@
+{
+  "Id": "11111111-1111-4111-8111-111111111103",
+  "Name": "OpenAI chat step 2 (demo)",
+  "IsEnabled": true,
+  "Method": "POST",
+  "Url": "https://api.openai.com/v1/chat/completions",
+  "ResponseStatus": 200,
+  "ResponseHeaders": { "Content-Type": "application/json", "openai-processing-ms": "2140" },
+  "ResponseBody": "{\"id\":\"chatcmpl-CqZ2k4Wm\",\"object\":\"chat.completion\",\"created\":1788004327,\"model\":\"gpt-5.4\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"The 502 is synthesized in `ProxyConnection.cs`: when the upstream TLS handshake throws, the catch block writes a 502 with the exception message as the body. `api.example.com` pins its certificate, so the MITM handshake can never succeed.\\n\\nFix: add a passthrough list of hosts that are tunneled as raw bytes instead of intercepted. I'll add `PassthroughHosts` to appsettings.json and skip `SslStream` for matching hosts.\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1873,\"completion_tokens\":96,\"total_tokens\":1969,\"prompt_tokens_details\":{\"cached_tokens\":1536}}}",
+  "LatencyMs": 2100,
+  "BodyMatchType": "contains",
+  "BodyMatch": "demo-step-2"
+}

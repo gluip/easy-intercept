@@ -1,0 +1,13 @@
+{
+  "name": "easy-intercept-demo-recorder",
+  "private": true,
+  "description": "Regenerates docs/demo.gif by driving the real UI in headless Chrome while mocked LLM traffic flows through the proxy.",
+  "scripts": {
+    "record": "node record.js"
+  },
+  "dependencies": {
+    "gifenc": "^1.0.3",
+    "playwright-core": "^1.63.0",
+    "pngjs": "^7.0.0"
+  }
+}
