@@ -83,6 +83,7 @@ builder.WebHost.UseUrls($"http://*:{uiPort}");
 // which makes "Exit" in the tray look like it does nothing.
 builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(3));
 
+builder.Services.AddOpenApi();
 builder.Services.AddSignalR();
 
 builder.Services.AddHttpClient("proxy", c => c.Timeout = Timeout.InfiniteTimeSpan)
@@ -122,6 +123,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapHub<ProxyHub>("/proxy-hub");
+app.MapOpenApi(); // machine-readable API description at /openapi/v1.json
 
 // Deliberately free of on-disk paths: the host binds to http://*:<port>, so anything
 // returned here is readable by other machines on the network. Local paths are available
@@ -137,6 +139,14 @@ app.MapGet("/api/info", () =>
         uiPort,
         proxyPort = StartupOptions.ProxyPort,
     });
+});
+
+// Markdown cheat-sheet for coding agents (llms.txt convention). Folder paths are only filled in
+// for loopback callers, for the same reason /api/info carries none.
+app.MapGet("/llms.txt", (HttpContext ctx, AppPaths paths) =>
+{
+    var local = ctx.Connection.RemoteIpAddress is { } ip && System.Net.IPAddress.IsLoopback(ip);
+    return Results.Text(AgentGuide.Render(uiPort, local ? paths : null), "text/markdown; charset=utf-8");
 });
 
 app.MapGet("/api/sessions", (SessionStore store) =>
