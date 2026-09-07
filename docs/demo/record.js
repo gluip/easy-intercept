@@ -17,7 +17,7 @@ const UI = "http://localhost:1337";
 const PROXY = "http://127.0.0.1:9999";
 
 const W = +(process.env.W || 1280), H = +(process.env.H || 720);
-const DRAG = +(process.env.DRAG || 90), FPS = +(process.env.FPS || 5), TOTAL = +(process.env.TOTAL || 20.5);
+const DRAG = +(process.env.DRAG || 90), FPS = +(process.env.FPS || 5), TOTAL = +(process.env.TOTAL || 24);
 const KEYFRAMES = !!process.env.KEYFRAMES, KEEP_APP = !!process.env.KEEP_APP;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -55,11 +55,15 @@ function stopApp() {
   }
 }
 
+// The demo rules in data/auto-responder share this id prefix, so they can be told apart
+// from whatever else a running instance may have loaded.
+const DEMO_RULE_ID_PREFIX = "11111111-1111-4111-8111-1111111111";
+
 async function checkDemoRules() {
   const rules = await (await fetch(`${UI}/api/auto-responders`)).json();
-  const demo = rules.filter((r) => /\(demo\)$/.test(r.name) && r.isEnabled).length;
+  const demo = rules.filter((r) => r.id.startsWith(DEMO_RULE_ID_PREFIX) && r.isEnabled).length;
   if (demo < 5)
-    fail(`expected 5 enabled "(demo)" auto-responder rules, found ${demo}.\n` +
+    fail(`expected the 5 enabled demo auto-responder rules, found ${demo}.\n` +
          `The running instance is probably using a different DataRoot than ${DATA_ROOT}.`);
 }
 
@@ -97,15 +101,23 @@ async function record() {
   await page.mouse.move(cx + DRAG, cy, { steps: 6 }); await page.mouse.up();
   await page.waitForTimeout(400);
 
+  const timelineToggle = page.getByRole("checkbox", { name: /Timeline/ });
   const timeline = [
+    // requests arrive; the waterfall goes on while some are still in flight so its bars grow live
     [0.8,  () => send("github")],
-    [2.4,  () => send("openai1")],
-    [4.4,  () => send("anthropic")],
-    [6.4,  () => send("gemini")],
-    [8.4,  () => send("openai2")],                 // 2.1 s mock latency: shows the pending state live
-    [11.8, () => page.getByRole("checkbox", { name: "LLM requests only" }).check()],
-    [13.4, () => page.locator("tr[data-id]", { hasText: "api.anthropic.com" }).first().click()],
-    [17.2, () => page.locator("tr[data-id]", { hasText: "The 502" }).first().click()],
+    [2.2,  () => send("openai1")],
+    [3.6,  () => timelineToggle.check()],
+    [4.0,  () => send("anthropic")],               // 1.4 s mock latency
+    [5.6,  () => send("gemini")],
+    [7.0,  () => send("openai2")],                 // 2.1 s mock latency: pending state + growing bar
+    [10.6, () => timelineToggle.uncheck()],
+    // LLM-only columns and the chat-transcript view
+    [11.2, () => page.getByRole("checkbox", { name: "LLM requests only" }).check()],
+    [12.4, () => page.locator("tr[data-id]", { hasText: "api.anthropic.com" }).first().click()],
+    [15.6, () => page.locator("tr[data-id]", { hasText: "The 502" }).first().click()],
+    // turn the captured response into a mock rule (form only; nothing is saved)
+    [18.2, () => page.getByRole("button", { name: /Add to Auto Responder/ }).click()],
+    [20.6, () => page.getByRole("button", { name: /Format/ }).click()],
   ];
 
   const frames = [];
@@ -125,7 +137,7 @@ async function record() {
 
   if (KEYFRAMES) {
     const keyAt = (sec) => frames.reduce((b, f) => (Math.abs(f.t - sec) < Math.abs(b.t - sec) ? f : b));
-    for (const sec of [10.5, 12.5, 15, 19]) fs.writeFileSync(path.join(__dirname, `key-${sec}s.png`), keyAt(sec).png);
+    for (const sec of [8.5, 11.8, 14, 17, 19.5, 23]) fs.writeFileSync(path.join(__dirname, `key-${sec}s.png`), keyAt(sec).png);
   }
   return frames;
 }

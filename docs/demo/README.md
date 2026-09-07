@@ -8,6 +8,12 @@ an Anthropic call with a thinking block and a tool use, and a Gemini call. All r
 served by the auto-responder rules in `data/auto-responder/`, so **no API keys and no real
 prompts are involved**, and the recording is identical every time.
 
+What the ~24 s show, in order: requests arriving live (including the pending state of a slow
+one), the Timeline waterfall with a bar still growing, the "LLM requests only" columns, the
+chat-transcript view for an Anthropic and an OpenAI session (tokens, cache, cost, thinking,
+tool calls), and finally "Add to Auto Responder" turning a captured response into a mock rule
+(the form is shown and formatted, nothing is saved).
+
 ## Run it
 
 Prerequisites: Node.js, Google Chrome, `curl`, a built frontend (`npx vite build` in `frontend/`),
@@ -20,12 +26,12 @@ npm run record
 ```
 
 The script starts the app itself with `--DataRoot=docs/demo/data` (so it picks up the demo rules and
-generates its own CA there), records ~20 s at 5 fps, encodes the GIF, and stops the app again.
+generates its own CA there), records ~24 s at 5 fps, encodes the GIF, and stops the app again.
 If an instance is already listening on port 1337 it is used as-is, after checking that it has the
-demo rules loaded.
+demo rules loaded (they are recognised by their fixed id prefix).
 
 Knobs (environment variables): `W`/`H` viewport (default 1280×720), `DRAG` extra list-pane width
-(default 90), `FPS` (5), `TOTAL` seconds (20.5), `KEYFRAMES=1` to also write a few PNGs for
+(default 90), `FPS` (5), `TOTAL` seconds (24), `KEYFRAMES=1` to also write a few PNGs for
 inspection, `KEEP_APP=1` to leave the app running afterwards.
 
 ## How the GIF stays small

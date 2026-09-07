@@ -4,7 +4,7 @@
 
 **A local HTTP/HTTPS debugging proxy built for the age of coding agents.**
 
-![EasyIntercept capturing OpenAI, Anthropic and Gemini calls live: token usage, cached tokens, cost per request, and a chat-transcript view with thinking blocks and tool calls](docs/demo.gif)
+![EasyIntercept capturing OpenAI, Anthropic and Gemini calls live: the timeline waterfall, token usage, cached tokens, cost per request, a chat-transcript view with thinking blocks and tool calls, and turning a captured response into an auto-responder mock](docs/demo.gif)
 
 When you're working with Cursor, GitHub Copilot, Claude Code, Windsurf and friends on code that talks to some API, they debug fastest when they can see the real traffic themselves, instead of relying on your description of it. EasyIntercept writes every captured request/response as a plain JSON file in a local `sessions/` folder, so your agent can read or grep the exact request and response directly — no copy-pasting payloads into a chat window. It also captures, inspects, mocks, and diffs that traffic through a single lightweight app, with native understanding of OpenAI, Anthropic, Gemini, and GitHub Copilot requests baked in for when the API in question is an LLM provider.
 
