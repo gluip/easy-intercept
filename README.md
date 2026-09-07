@@ -51,7 +51,9 @@ Launching EasyIntercept from the Start Menu opens the UI in your browser; if it 
 
 Data (captured sessions, mock rules, browser profiles, the CA) lives in `%LOCALAPPDATA%\EasyIntercept` and is kept when you uninstall. `%LOCALAPPDATA%\EasyIntercept\appsettings.json` can hold user overrides such as `UiPort` or `DataRoot`; both also work as environment variables or `--UiPort=…` / `--DataRoot=…` command-line arguments.
 
-To build the installer yourself, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`) and run `.\build-installer.ps1 -Version 0.1.0`; the setup exe lands in `dist/`. Pushing a `v*` tag builds and publishes it via GitHub Actions.
+To build the installer yourself, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`) and run `.\build-installer.ps1 -Version 0.1.0`; the setup exe lands in `dist/`.
+
+**Releasing** is driven by the version number: bump `<Version>` in `EasyIntercept/EasyIntercept.csproj` in your PR and merge it. GitHub Actions then tags `v<version>`, builds the installer and publishes the release with generated notes. Merges that don't change the version don't release anything. Pushing a `v*` tag by hand still works, and a manual workflow run builds the installer as a downloadable artifact without publishing.
 
 ### From source
 

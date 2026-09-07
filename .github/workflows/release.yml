@@ -1,21 +1,74 @@
 name: Release
 
+# Releases are driven by the version in EasyIntercept/EasyIntercept.csproj:
+#   - push to main with a <Version> that has no tag yet  -> tag it, build the installer, publish the release
+#   - push to main without a version change                -> nothing (the version job exits early)
+#   - push of a v* tag by hand                             -> build + publish for that tag (still supported)
+#   - manual run                                           -> build only, installer as a downloadable artifact
+# Tagging and building happen in the same run on purpose: a tag pushed with the workflow's own token
+# does not trigger other workflows, so a separate tag-triggered build would never start.
+
 on:
   push:
+    branches: ["main"]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
-        description: "Version (x.y.z)"
+        description: "Version to build (x.y.z); no release is published"
         required: true
         default: "0.0.0"
 
 permissions:
   contents: write
 
+# Serialise runs so two quick merges cannot both try to tag the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version and whether to publish
+        id: v
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            publish=true
+            echo "tag push: releasing $version"
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            version="${{ github.event.inputs.version }}"
+            publish=false
+            echo "manual run: building $version, no release"
+          else
+            version=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' EasyIntercept/EasyIntercept.csproj)
+            if [[ -z "$version" ]]; then echo "no <Version> in csproj" >&2; exit 1; fi
+            if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+              publish=false
+              echo "v$version already exists: nothing to release"
+            else
+              publish=true
+              echo "new version $version: will tag and release"
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
   windows-installer:
+    needs: version
+    if: needs.version.outputs.publish == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,20 +81,6 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-
-      - name: Determine version
-        shell: pwsh
-        run: |
-          $requested = '${{ github.event.inputs.version }}'
-          if ($env:GITHUB_REF_TYPE -eq 'tag') {
-            $v = $env:GITHUB_REF_NAME -replace '^v', ''   # v1.2.3 -> 1.2.3
-          } elseif ($requested) {
-            $v = $requested                                # manual run
-          } else {
-            $v = '0.0.0'                                   # branch push: build check only
-          }
-          "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "Version: $v"
 
       - name: Test
         shell: pwsh
@@ -57,9 +96,26 @@ jobs:
           name: EasyIntercept-Setup-${{ env.VERSION }}
           path: dist/EasyIntercept-Setup-*.exe
 
-      - name: GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/EasyIntercept-Setup-*.exe
-          generate_release_notes: true
+      - name: Tag (main push only)
+        if: needs.version.outputs.publish == 'true' && github.ref_type != 'tag'
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "v$env:VERSION" -m "EasyIntercept $env:VERSION"
+          git push origin "v$env:VERSION"
+
+      - name: Publish GitHub release
+        if: needs.version.outputs.publish == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v$env:VERSION"
+          $asset = Get-ChildItem dist/EasyIntercept-Setup-*.exe | Select-Object -First 1 -ExpandProperty FullName
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $asset --clobber
+          } else {
+            gh release create $tag $asset --title $tag --generate-notes
+          }
