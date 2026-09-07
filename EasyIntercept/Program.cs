@@ -1,13 +1,87 @@
+using System.Reflection;
+using EasyIntercept;
 using EasyIntercept.AutoResponder;
 using EasyIntercept.Certificates;
 using EasyIntercept.Export;
+using EasyIntercept.Hosting;
 using EasyIntercept.Hubs;
 using EasyIntercept.Proxy;
 using EasyIntercept.Storage;
+using Microsoft.Extensions.Configuration.Json;
 
-var builder = WebApplication.CreateBuilder(args);
+var options = StartupOptions.Parse(args);
+args = StartupOptions.StripOwnFlags(args);
 
-builder.WebHost.UseUrls("http://*:8080");
+#if WINDOWS
+// WinExe: no console of our own, but reuse the terminal's when started from one (dotnet run, pwsh).
+EasyIntercept.Desktop.ConsoleAttach.TryAttachParentConsole();
+#endif
+
+// Published/installed builds ship wwwroot + appsettings*.json next to the exe; serve from there
+// regardless of the working directory (Start Menu, HKLM Run, terminal). Dev builds (dotnet run)
+// have no wwwroot in bin/, so they keep ASP.NET's default: the project directory.
+var exeDir = AppContext.BaseDirectory;
+var builder = Directory.Exists(Path.Combine(exeDir, "wwwroot"))
+    ? WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = exeDir })
+    : WebApplication.CreateBuilder(args);
+
+// User-level overrides live in <DataRoot>\appsettings.json (e.g. UiPort chosen at runtime).
+// Inserted after the shipped appsettings*.json so env vars and command line still win.
+var dataRoot = AppPaths.ResolveRoot(builder.Configuration["DataRoot"]);
+Directory.CreateDirectory(dataRoot);
+{
+    var sources = builder.Configuration.Sources;
+    var userSettings = new JsonConfigurationSource
+    {
+        Path = Path.Combine(dataRoot, "appsettings.json"),
+        Optional = true,
+        ReloadOnChange = false,
+    };
+    userSettings.ResolveFileProvider();
+    var insertAt = sources.ToList().FindLastIndex(s => s is JsonConfigurationSource) + 1;
+    sources.Insert(insertAt, userSettings);
+}
+
+if (options.InstallCa)
+    return CaInstaller.Run(new AppPaths(builder.Configuration));
+
+var uiPort = StartupOptions.GetUiPort(builder.Configuration);
+
+// Single instance: a second launch just brings up the UI of the running one.
+using var instanceMutex = new Mutex(true, @"Local\EasyIntercept", out var isFirstInstance);
+if (!isFirstInstance)
+{
+    if (options.ShouldOpenBrowser) Launcher.OpenUrl(StartupOptions.UiUrl(uiPort));
+    return 0;
+}
+
+if (!Launcher.IsPortFree(uiPort))
+{
+    int? chosen = null;
+#if WINDOWS
+    if (!options.NoTray)
+    {
+        chosen = EasyIntercept.Desktop.PortPrompt.Show(uiPort, Launcher.FindFreePort(uiPort + 1));
+        if (chosen is int p)
+        {
+            StartupOptions.SaveUserSetting(Path.Combine(dataRoot, "appsettings.json"), "UiPort", p);
+            builder.Configuration["UiPort"] = p.ToString();
+        }
+    }
+#endif
+    if (chosen is null)
+    {
+        Console.Error.WriteLine($"Port {uiPort} is already in use. Start with --UiPort=<port> or set UiPort in {Path.Combine(dataRoot, "appsettings.json")}.");
+        return 1;
+    }
+    uiPort = chosen.Value;
+}
+
+builder.WebHost.UseUrls($"http://*:{uiPort}");
+
+// Graceful shutdown would otherwise wait up to 30 s for open proxy/SignalR connections to drain,
+// which makes "Exit" in the tray look like it does nothing.
+builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(3));
 
 builder.Services.AddSignalR();
 
@@ -30,12 +104,17 @@ builder.Services.AddHttpClient("replay").ConfigurePrimaryHttpMessageHandler(() =
         UseProxy = true,
     });
 
+builder.Services.AddSingleton<AppPaths>();
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<CertificateService>();
 builder.Services.AddSingleton<AutoResponderStore>();
 builder.Services.AddSingleton<SystemProxyService>();
 builder.Services.AddSingleton<BrowserLauncherService>();
 builder.Services.AddHostedService<ProxyServer>();
+#if WINDOWS
+if (!options.NoTray)
+    builder.Services.AddHostedService<EasyIntercept.Desktop.TrayIconService>();
+#endif
 
 var app = builder.Build();
 
@@ -43,6 +122,22 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapHub<ProxyHub>("/proxy-hub");
+
+app.MapGet("/api/info", (AppPaths paths) =>
+{
+    var informational = Assembly.GetEntryAssembly()?
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+    var version = informational?.Split('+')[0] ?? Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "dev";
+    return Results.Ok(new
+    {
+        version,
+        uiPort,
+        proxyPort = StartupOptions.ProxyPort,
+        dataRoot = paths.Root,
+        sessionsPath = paths.Sessions,
+        autoResponderPath = paths.AutoResponder,
+    });
+});
 
 app.MapGet("/api/sessions", (SessionStore store) =>
     Results.Ok(store.GetAll()));
@@ -207,7 +302,7 @@ app.MapGet("/install", async (HttpContext ctx) =>
         </head>
         <body>
           <h1>Install EasyIntercept CA Certificate</h1>
-          <p>Proxy address: <code>{{ctx.Request.Host.Host}}:9999</code></p>
+          <p>Proxy address: <code>{{ctx.Request.Host.Host}}:{{StartupOptions.ProxyPort}}</code></p>
           <div id="qr" class="qr"></div>
           <script>new QRCode(document.getElementById("qr"), { text: "{{caUrl}}", width: 200, height: 200 });</script>
           <a class="btn" href="/ca">Download &amp; Install Certificate</a>
@@ -218,7 +313,7 @@ app.MapGet("/install", async (HttpContext ctx) =>
             <li>Tap the <em>EasyIntercept</em> profile → <em>Install</em></li>
             <li>Go to <strong>Settings → General → About → Certificate Trust Settings</strong></li>
             <li>Enable full trust for <em>EasyIntercept CA</em></li>
-            <li>Set proxy to <code>{{ctx.Request.Host.Host}}:9999</code> under Wi-Fi settings</li>
+            <li>Set proxy to <code>{{ctx.Request.Host.Host}}:{{StartupOptions.ProxyPort}}</code> under Wi-Fi settings</li>
           </ol>
         </body>
         </html>
@@ -227,7 +322,12 @@ app.MapGet("/install", async (HttpContext ctx) =>
     await ctx.Response.WriteAsync(html);
 });
 
+if (options.ShouldOpenBrowser)
+    app.Lifetime.ApplicationStarted.Register(() => Launcher.OpenUrl(StartupOptions.UiUrl(uiPort)));
+
 await app.RunAsync();
+GC.KeepAlive(instanceMutex);
+return 0;
 
 record SystemProxyEnableRequest(bool Enabled);
 record BrowserLaunchRequest(string BrowserId);

@@ -18,6 +18,17 @@ interface DetectedBrowser {
 
 const availableBrowsers = ref<DetectedBrowser[]>([]);
 
+interface AppInfo {
+  version: string;
+  uiPort: number;
+  proxyPort: number;
+  dataRoot: string;
+  sessionsPath: string;
+  autoResponderPath: string;
+}
+
+const appInfo = ref<AppInfo | null>(null);
+
 const connection = new HubConnectionBuilder()
   .withUrl("/proxy-hub")
   .withAutomaticReconnect()
@@ -118,6 +129,11 @@ async function setSystemProxy(enabled: boolean) {
   systemProxyEnabled.value = data.enabled;
 }
 
+async function loadAppInfo() {
+  const r = await fetch("/api/info");
+  appInfo.value = await r.json();
+}
+
 async function loadBrowsers() {
   const r = await fetch("/api/browser-launch");
   const data = await r.json();
@@ -156,5 +172,7 @@ export function useProxy() {
     availableBrowsers: readonly(availableBrowsers),
     loadBrowsers,
     launchBrowser,
+    appInfo: readonly(appInfo),
+    loadAppInfo,
   };
 }

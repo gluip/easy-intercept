@@ -16,6 +16,7 @@ public class ProxyServer : BackgroundService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly CertificateService _certs;
     private readonly AutoResponderStore _autoResponder;
+    private readonly int _uiPort;
 
     public ProxyServer(
         ILogger<ProxyServer> logger,
@@ -23,7 +24,8 @@ public class ProxyServer : BackgroundService
         IHubContext<ProxyHub> hub,
         IHttpClientFactory httpClientFactory,
         CertificateService certs,
-        AutoResponderStore autoResponder)
+        AutoResponderStore autoResponder,
+        IConfiguration config)
     {
         _logger = logger;
         _sessions = sessions;
@@ -31,15 +33,16 @@ public class ProxyServer : BackgroundService
         _httpClientFactory = httpClientFactory;
         _certs = certs;
         _autoResponder = autoResponder;
+        _uiPort = Hosting.StartupOptions.GetUiPort(config);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var listener = new TcpListener(IPAddress.Any, 9999);
+        var listener = new TcpListener(IPAddress.Any, Hosting.StartupOptions.ProxyPort);
         listener.Start();
 
-        _logger.LogInformation("EasyIntercept proxy  →  http://localhost:9999");
-        _logger.LogInformation("EasyIntercept web UI →  http://localhost:8080");
+        _logger.LogInformation("EasyIntercept proxy  →  http://localhost:{ProxyPort}", Hosting.StartupOptions.ProxyPort);
+        _logger.LogInformation("EasyIntercept web UI →  http://localhost:{UiPort}", _uiPort);
 
         while (!stoppingToken.IsCancellationRequested)
         {

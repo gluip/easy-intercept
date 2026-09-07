@@ -15,20 +15,21 @@ namespace EasyIntercept.Certificates;
 
 public class CertificateService
 {
-    private const string CaDir = "certs";
     private const string CaPfxFile = "easyntercept-ca.pfx";
     private const string CaCrtFile = "easyntercept-ca.crt";
     private const string CaPassword = "easyintercept";
 
+    private readonly string _caDir;
     private readonly AsymmetricCipherKeyPair _caKeyPair;
     private readonly X509Certificate _caCert;
     private readonly X509Certificate2 _caX509;
     private readonly ConcurrentDictionary<string, X509Certificate2> _cache = new();
 
-    public CertificateService()
+    public CertificateService(AppPaths paths)
     {
-        Directory.CreateDirectory(CaDir);
-        var pfxPath = Path.Combine(CaDir, CaPfxFile);
+        _caDir = paths.Certs;
+        Directory.CreateDirectory(_caDir);
+        var pfxPath = Path.Combine(_caDir, CaPfxFile);
 
         if (File.Exists(pfxPath))
         {
@@ -52,7 +53,7 @@ public class CertificateService
         }
     }
 
-    public string CaCertPath => Path.Combine(CaDir, CaCrtFile);
+    public string CaCertPath => Path.Combine(_caDir, CaCrtFile);
 
     public X509Certificate2 GetCertificateForHost(string host)
     {
@@ -132,7 +133,7 @@ public class CertificateService
             store.Save(fs, CaPassword.ToCharArray(), new SecureRandom());
 
         // Save CRT (PEM, public only — for user to install)
-        var crtPath = Path.Combine(CaDir, CaCrtFile);
+        var crtPath = Path.Combine(_caDir, CaCrtFile);
         using var writer = new StreamWriter(crtPath);
         var pemWriter = new PemWriter(writer);
         pemWriter.WriteObject(_caCert);

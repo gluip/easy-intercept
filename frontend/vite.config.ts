@@ -18,9 +18,9 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": "http://localhost:8080",
+      "/api": "http://localhost:1337",
       "/proxy-hub": {
-        target: "http://localhost:8080",
+        target: "http://localhost:1337",
         ws: true,
       },
     },

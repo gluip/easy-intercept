@@ -16,10 +16,9 @@ public class SessionStore
 
     private static readonly JsonSerializerOptions _json = new() { WriteIndented = true };
 
-    public SessionStore(IConfiguration config)
+    public SessionStore(AppPaths paths)
     {
-        var raw = config["SessionsPath"] ?? "sessions";
-        _dir = Path.IsPathRooted(raw) ? raw : Path.Combine(Directory.GetCurrentDirectory(), raw);
+        _dir = paths.Sessions;
         Directory.CreateDirectory(_dir);
         LoadFromDisk();
     }

@@ -32,6 +32,8 @@ const {
   availableBrowsers,
   loadBrowsers,
   launchBrowser,
+  appInfo,
+  loadAppInfo,
 } = useProxy();
 
 const systemProxyBusy = ref(false);
@@ -208,6 +210,11 @@ onMounted(async () => {
   } catch (e) {
     console.error("SignalR connect failed:", e);
   }
+  try {
+    await loadAppInfo();
+  } catch (e) {
+    console.error("Failed to load app info:", e);
+  }
   await loadSessions();
   await loadRules();
   try {
@@ -227,7 +234,11 @@ onMounted(async () => {
   <div class="app">
     <header>
       <h1>EasyIntercept</h1>
-      <small>proxy → localhost:9999 &nbsp;|&nbsp; ui → localhost:8080</small>
+      <small :title="appInfo ? `Sessions: ${appInfo.sessionsPath} — Mock rules: ${appInfo.autoResponderPath}` : ''">
+        proxy → localhost:{{ appInfo?.proxyPort ?? 9999 }}
+        &nbsp;|&nbsp; ui → localhost:{{ appInfo?.uiPort ?? "…" }}
+        <template v-if="appInfo">&nbsp;|&nbsp; sessions → {{ appInfo.sessionsPath }}</template>
+      </small>
       <button
         class="system-proxy-btn"
         :class="{ active: systemProxyEnabled }"

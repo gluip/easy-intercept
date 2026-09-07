@@ -37,6 +37,22 @@ Free, open source, and runs great on both Windows and macOS. If something isn't 
 
 ## Getting started
 
+### Windows: installer (recommended)
+
+Download `EasyIntercept-Setup-<version>.exe` from the [Releases](https://github.com/gluip/easy-intercept/releases) page and run it. No .NET runtime or Node.js needed. The installer:
+
+- asks which port the web UI should use (default `1337`; change it if e.g. Strapi already uses that port — the proxy itself is always `9999`),
+- can register EasyIntercept to **start automatically at Windows login** (it runs quietly with a tray icon: right-click for *Open*, *System proxy on/off*, *Launch proxied browser*, *Open sessions folder*, *Exit*),
+- can install the EasyIntercept root CA into the Windows trust store and add a Windows Firewall rule.
+
+Launching EasyIntercept from the Start Menu opens the UI in your browser; if it is already running, only the browser opens. If the configured UI port is taken at startup, a small dialog lets you pick another one.
+
+Data (captured sessions, mock rules, browser profiles, the CA) lives in `%LOCALAPPDATA%\EasyIntercept` and is kept when you uninstall. `%LOCALAPPDATA%\EasyIntercept\appsettings.json` can hold user overrides such as `UiPort` or `DataRoot`; both also work as environment variables or `--UiPort=…` / `--DataRoot=…` command-line arguments.
+
+To build the installer yourself, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`) and run `.\build-installer.ps1 -Version 0.1.0`; the setup exe lands in `dist/`. Pushing a `v*` tag builds and publishes it via GitHub Actions.
+
+### From source
+
 **Prerequisites:** .NET 10 SDK, Node.js (for building the frontend).
 
 ```bash
@@ -53,14 +69,15 @@ cd ../EasyIntercept
 dotnet run
 ```
 
-- Web UI: [http://localhost:8080](http://localhost:8080)
+- Web UI: [http://localhost:1337](http://localhost:1337) (configurable via `UiPort`)
 - Proxy listens on port `9999`
 
-On Windows/macOS, `restart.ps1` / `restart.sh` do the same build-and-run in one step.
+On Windows/macOS, `restart.ps1` / `restart.sh` do the same build-and-run in one step and keep the data folders (`sessions/`, `auto-responder/`, `certs/`) inside `EasyIntercept/` by setting `DataRoot`. A plain `dotnet run` without `DataRoot` uses `%LOCALAPPDATA%\EasyIntercept` (Windows) or `~/.local/share/EasyIntercept` (macOS/Linux) instead.
 
 ### Installing the CA certificate (for HTTPS interception)
-- **Desktop:** run `install-ca.ps1` (Windows) or `install-ca.sh` (macOS), or download the cert directly from `http://localhost:8080/ca`.
-- **Mobile:** open `http://localhost:8080/install` on your phone (or scan the QR code it shows) for step-by-step iOS install instructions.
+- **Windows:** the installer can do this for you; otherwise run `EasyIntercept.exe --install-ca` (or `install-ca.ps1`).
+- **macOS:** run `install-ca.sh`, or download the cert directly from `http://localhost:1337/ca`.
+- **Mobile:** open `http://localhost:1337/install` on your phone (or scan the QR code it shows) for step-by-step iOS install instructions.
 
 Then point your device or app at `<host>:9999` as its HTTP/HTTPS proxy.
 

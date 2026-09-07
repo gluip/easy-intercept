@@ -9,7 +9,12 @@ public record DetectedBrowser(string Id, string Name, string ExePath);
 public class BrowserLauncherService
 {
     private const int ProxyPort = 9999;
-    private const string ProfileRootDir = "browser-profiles";
+    private readonly string _profileRootDir;
+
+    public BrowserLauncherService(AppPaths paths)
+    {
+        _profileRootDir = paths.BrowserProfiles;
+    }
 
     public IReadOnlyList<DetectedBrowser> DetectBrowsers()
     {
@@ -27,7 +32,7 @@ public class BrowserLauncherService
         var browser = DetectBrowsers().FirstOrDefault(b => b.Id == browserId)
             ?? throw new InvalidOperationException($"Browser '{browserId}' was not found.");
 
-        var profileDir = Path.GetFullPath(Path.Combine(ProfileRootDir, browserId));
+        var profileDir = Path.GetFullPath(Path.Combine(_profileRootDir, browserId));
         Directory.CreateDirectory(profileDir);
 
         var psi = new ProcessStartInfo(browser.ExePath)
