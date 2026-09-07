@@ -23,7 +23,9 @@ echo "→ Building frontend..."
 echo "→ Building backend..."
 dotnet build "$PROJECT" -c Debug --nologo -v quiet
 
-# Keep dev data (sessions, certs, mock rules) in the project folder instead of ~/.local/share/EasyIntercept
+# Keep dev data (sessions, certs, mock rules) in the project folder instead of the default data root
+# (~/Library/Application Support/EasyIntercept on macOS). Note that this includes the root CA, so a dev
+# run and a normal run use different CAs — rerun ./install-ca.sh after switching between the two.
 export DataRoot="$ROOT/EasyIntercept"
 export UiPort="$UI_PORT"
 
