@@ -3,6 +3,9 @@ name: Release
 on:
   push:
     tags: ["v*"]
+    # TEMPORARY: exercises the full build on this branch without publishing anything
+    # (the release step below only runs for tags). Remove before merging to main.
+    branches: ["feature/add-installer"]
   workflow_dispatch:
     inputs:
       version:
@@ -32,10 +35,13 @@ jobs:
       - name: Determine version
         shell: pwsh
         run: |
+          $requested = '${{ github.event.inputs.version }}'
           if ($env:GITHUB_REF_TYPE -eq 'tag') {
-            $v = $env:GITHUB_REF_NAME -replace '^v', ''
+            $v = $env:GITHUB_REF_NAME -replace '^v', ''   # v1.2.3 -> 1.2.3
+          } elseif ($requested) {
+            $v = $requested                                # manual run
           } else {
-            $v = '${{ github.event.inputs.version }}'
+            $v = '0.0.0'                                   # branch push: build check only
           }
           "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Version: $v"
