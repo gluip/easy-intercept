@@ -35,7 +35,9 @@ Write-Host "Building backend..." -ForegroundColor Cyan
 dotnet build $project -c Debug --nologo -v quiet
 if ($LASTEXITCODE -ne 0) { Write-Host "Backend build failed." -ForegroundColor Red; exit 1 }
 
-# Keep dev data (sessions, certs, mock rules) in the project folder instead of %LOCALAPPDATA%\EasyIntercept
+# Keep dev data (sessions, certs, mock rules) in the project folder instead of the default data root
+# (%LOCALAPPDATA%\EasyIntercept). Note that this includes the root CA, so a dev run and a normal run
+# use different CAs - rerun install-ca.ps1 after switching between the two.
 $env:DataRoot = Join-Path $root "EasyIntercept"
 $env:UiPort = $UiPort
 

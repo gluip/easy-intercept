@@ -77,12 +77,14 @@ dotnet run
 - Web UI: [http://localhost:1337](http://localhost:1337) (configurable via `UiPort`)
 - Proxy listens on port `9999`
 
-On Windows/macOS, `restart.ps1` / `restart.sh` do the same build-and-run in one step and keep the data folders (`sessions/`, `auto-responder/`, `certs/`) inside `EasyIntercept/` by setting `DataRoot`. A plain `dotnet run` without `DataRoot` uses `%LOCALAPPDATA%\EasyIntercept` (Windows) or `~/.local/share/EasyIntercept` (macOS/Linux) instead.
+On Windows/macOS, `restart.ps1` / `restart.sh` do the same build-and-run in one step and keep the data folders (`sessions/`, `auto-responder/`, `certs/`) inside `EasyIntercept/` by setting `DataRoot`. A plain `dotnet run` without `DataRoot` uses `%LOCALAPPDATA%\EasyIntercept` (Windows), `~/Library/Application Support/EasyIntercept` (macOS) or `~/.local/share/EasyIntercept` (Linux) instead.
 
 ### Installing the CA certificate (for HTTPS interception)
 - **Windows:** the installer can do this for you; otherwise run `EasyIntercept.exe --install-ca` (or `install-ca.ps1`).
 - **macOS:** run `install-ca.sh`, or download the cert directly from `http://localhost:1337/ca`.
 - **Mobile:** open `http://localhost:1337/install` on your phone (or scan the QR code it shows) for step-by-step iOS install instructions.
+
+Both `install-ca.sh` and `install-ca.ps1` fetch the certificate from the *running* instance (`http://localhost:<UI_PORT>/ca`) and only fall back to `$DataRoot`, the default data root and the repo's dev folder if nothing is listening. That matters because the CA lives inside the data root: switching between `restart.sh`/`restart.ps1` (data root = the repo) and a normal run (default data root) means two different CAs, and the browser will show certificate errors for the one that isn't trusted. The scripts warn when a *different* EasyIntercept CA is already trusted; pass an explicit path (`./install-ca.sh path/to/easyntercept-ca.crt`) to install a specific one.
 
 Then point your device or app at `<host>:9999` as its HTTP/HTTPS proxy.
 
