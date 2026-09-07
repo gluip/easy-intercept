@@ -9,7 +9,7 @@
     <RootNamespace>EasyIntercept</RootNamespace>
     <AssemblyName>EasyIntercept</AssemblyName>
     <ApplicationIcon>icon.ico</ApplicationIcon>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <!-- Shown in the exe's file properties (Details tab) -->
     <Product>EasyIntercept</Product>

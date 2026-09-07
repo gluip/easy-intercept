@@ -9,8 +9,7 @@ namespace EasyIntercept.Hosting;
 public static class AgentGuide
 {
     private const string NotShown =
-        "(not shown: this request did not come from loopback. Ask the user on the machine, " +
-        "or resolve a session's file with GET /api/sessions/{id}/file-path)";
+        "(not shown: this request did not come from loopback. Ask the user on the machine where EasyIntercept runs)";
 
     public static string Render(int uiPort, AppPaths? paths)
     {
@@ -76,7 +75,7 @@ public static class AgentGuide
               "Timestamp": "2026-09-07T10:15:52.123Z",   // UTC, when the request started
               "Method": "POST",
               "Url": "https://api.openai.com/v1/chat/completions",
-              "RequestHeaders": { "Content-Type": "application/json", "Authorization": "Bearer …" },
+              "RequestHeaders": { "Content-Type": "application/json", "Authorization": "Bearer <redacted here; real files hold the actual token>" },
               "RequestBody": "{\"model\":\"gpt-5.4\",…}",   // a string; parse it again to get the JSON
               "ResponseStatus": 200,                     // 0 = still in flight
               "ResponseHeaders": { "Content-Type": "application/json" },
@@ -95,6 +94,9 @@ public static class AgentGuide
             - Images up to 5 MB become a `data:<type>;base64,…` URL. Other binary bodies are replaced by
               a placeholder such as `[12345 bytes]` or `[123 bytes binary]`.
             - A response served by a mock rule carries the header `X-EasyIntercept-AutoResponder: true`.
+            - **Session files contain secrets.** Headers and bodies are stored verbatim: Authorization headers,
+              cookies, API keys, personal data. Treat every file as confidential; never paste its contents into
+              a chat, commit, issue or log, and quote only what the task needs.
 
             Recipes:
 
@@ -104,7 +106,7 @@ public static class AgentGuide
             - Re-send a captured request: `POST {{ui}}/api/sessions/{id}/replay` returns `{"status":200,"body":"…"}`.
               The replay goes through the proxy again, so it is captured and can be mocked like the original.
             - Delete some: `POST {{ui}}/api/sessions/delete` with a JSON array of ids. Delete all: `DELETE {{ui}}/api/sessions`.
-            - Reveal the file in Explorer/Finder for the user: `POST {{ui}}/api/sessions/{id}/show-in-explorer`.
+            - Reveal the file in Windows Explorer for the user (Windows only): `POST {{ui}}/api/sessions/{id}/show-in-explorer`.
             - Export to Bruno: `POST {{ui}}/api/bruno/export` with `{"sessionIds":["…"],"collectionPath":"/absolute/folder","name":"optional"}`.
 
             ## Mock responses (Auto Responder)
@@ -151,7 +153,7 @@ public static class AgentGuide
             | POST | `/api/sessions/delete` | Delete the sessions whose ids are in the JSON array body |
             | POST | `/api/sessions/{id}/replay` | Re-send a captured request through the proxy |
             | GET | `/api/sessions/{id}/file-path` | Absolute path of the session's JSON file |
-            | POST | `/api/sessions/{id}/show-in-explorer` | Reveal that file in Explorer/Finder |
+            | POST | `/api/sessions/{id}/show-in-explorer` | Reveal that file in Windows Explorer (Windows only) |
             | POST | `/api/bruno/export` | Write sessions as `.bru` files into a Bruno collection folder |
             | GET / POST | `/api/auto-responders` | List / create mock rules |
             | PUT / DELETE | `/api/auto-responders/{id}` | Update / delete a mock rule |
