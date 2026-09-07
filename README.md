@@ -45,7 +45,7 @@ Free, open source, and runs great on both Windows and macOS. If something isn't 
 Download `EasyIntercept-Setup-<version>.exe` from the [Releases](https://github.com/gluip/easy-intercept/releases) page and run it. No .NET runtime or Node.js needed. The installer:
 
 - asks which port the web UI should use (default `1337`; change it if e.g. Strapi already uses that port — the proxy itself is always `9999`),
-- can register EasyIntercept to **start automatically at Windows login** (it runs quietly with a tray icon: right-click for *Open*, *System proxy on/off*, *Launch proxied browser*, *Open sessions folder*, *Exit*),
+- can register EasyIntercept to **start automatically at Windows login** (it runs quietly with a tray icon: right-click for *Open*, *System proxy on/off*, *Launch proxied browser*, *Open sessions folder*, *Copy link for coding agents*, *Exit*),
 - can install the EasyIntercept root CA into the Windows trust store and add a Windows Firewall rule.
 
 Launching EasyIntercept from the Start Menu opens the UI in your browser; if it is already running, only the browser opens. If the configured UI port is taken at startup, a small dialog lets you pick another one.

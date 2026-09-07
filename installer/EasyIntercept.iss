@@ -154,7 +154,8 @@ begin
     WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
       'Web UI:  http://localhost:' + Trim(PortPage.Values[0]) + #13#10 +
       'Proxy:   127.0.0.1:{#ProxyPort}' + #13#10 +
-      'Data:    %LOCALAPPDATA%\{#AppName}';
+      'Data:    %LOCALAPPDATA%\{#AppName}' + #13#10 +
+      'Agents:  http://localhost:' + Trim(PortPage.Values[0]) + '/llms.txt  (paste into your project''s CLAUDE.md / AGENTS.md)';
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;

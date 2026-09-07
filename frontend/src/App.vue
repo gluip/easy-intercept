@@ -49,6 +49,20 @@ async function toggleSystemProxy() {
   }
 }
 
+const snippetCopied = ref(false);
+
+// One line a person drops into their project's CLAUDE.md / AGENTS.md; the agent then reads /llms.txt itself.
+async function copyAgentSnippet() {
+  const line = `EasyIntercept runs locally; read ${location.origin}/llms.txt before capturing or mocking HTTP traffic.`;
+  try {
+    await navigator.clipboard.writeText(line);
+    snippetCopied.value = true;
+    setTimeout(() => (snippetCopied.value = false), 1500);
+  } catch (e) {
+    console.error("Clipboard write failed:", e);
+  }
+}
+
 const browserLaunchBusy = ref(false);
 
 async function launchBrowserById(id: string) {
@@ -237,6 +251,11 @@ onMounted(async () => {
       <small :title="appInfo ? `EasyIntercept ${appInfo.version}` : ''">
         proxy → localhost:{{ appInfo?.proxyPort ?? 9999 }}
         &nbsp;|&nbsp; ui → localhost:{{ appInfo?.uiPort ?? "…" }}
+        &nbsp;|&nbsp;
+        <a class="agent-link" href="/llms.txt" target="_blank" rel="noopener" title="How a coding agent uses EasyIntercept, served by this instance">for coding agents</a>
+        <button class="copy-snippet" @click="copyAgentSnippet" title="Copy a one-line instruction for your project's CLAUDE.md / AGENTS.md">
+          {{ snippetCopied ? "copied" : "copy snippet" }}
+        </button>
       </small>
       <button
         class="system-proxy-btn"
@@ -425,6 +444,27 @@ header h1 {
 header small {
   color: #858585;
   font-size: 12px;
+}
+header small .agent-link {
+  color: #4fc1ff;
+  text-decoration: none;
+}
+header small .agent-link:hover {
+  text-decoration: underline;
+}
+header small .copy-snippet {
+  margin-left: 6px;
+  font: inherit;
+  font-size: 11px;
+  color: #858585;
+  background: #3c3c3c;
+  border: 1px solid #4e4e52;
+  border-radius: 3px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+header small .copy-snippet:hover {
+  color: #d4d4d4;
 }
 
 .system-proxy-btn {
