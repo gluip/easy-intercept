@@ -100,7 +100,7 @@ builder.Services.AddHttpClient("replay").ConfigurePrimaryHttpMessageHandler(() =
     {
         AllowAutoRedirect = false,
         UseCookies = false,
-        Proxy = new System.Net.WebProxy("http://localhost:9999"),
+        Proxy = new System.Net.WebProxy($"http://localhost:{StartupOptions.ProxyPort}"),
         UseProxy = true,
     });
 
@@ -123,7 +123,10 @@ app.UseStaticFiles();
 
 app.MapHub<ProxyHub>("/proxy-hub");
 
-app.MapGet("/api/info", (AppPaths paths) =>
+// Deliberately free of on-disk paths: the host binds to http://*:<port>, so anything
+// returned here is readable by other machines on the network. Local paths are available
+// through the tray menu and the per-session /api/sessions/{id}/file-path endpoint.
+app.MapGet("/api/info", () =>
 {
     var informational = Assembly.GetEntryAssembly()?
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
@@ -133,9 +136,6 @@ app.MapGet("/api/info", (AppPaths paths) =>
         version,
         uiPort,
         proxyPort = StartupOptions.ProxyPort,
-        dataRoot = paths.Root,
-        sessionsPath = paths.Sessions,
-        autoResponderPath = paths.AutoResponder,
     });
 });
 

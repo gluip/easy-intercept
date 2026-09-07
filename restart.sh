@@ -9,7 +9,8 @@ set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 PROJECT="$ROOT/EasyIntercept/EasyIntercept.csproj"
 UI_PORT="${UI_PORT:-1337}"
-PROXY_PORT="${PROXY_PORT:-9999}"
+# Fixed in the app (Hosting/StartupOptions.ProxyPort); not configurable, so not overridable here.
+PROXY_PORT=9999
 
 echo "→ Killing existing processes..."
 pkill -9 -f "dotnet.*EasyIntercept" 2>/dev/null || true

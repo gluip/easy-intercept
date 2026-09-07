@@ -8,8 +8,8 @@ namespace EasyIntercept.Proxy;
 public class SystemProxyService
 {
     private const string ProxyHost = "127.0.0.1";
-    private const int ProxyPort = 9999;
-    private const string ProxyAddress = "127.0.0.1:9999";
+    private const int ProxyPort = Hosting.StartupOptions.ProxyPort;
+    private static readonly string ProxyAddress = $"{ProxyHost}:{ProxyPort}";
 
     public bool IsEnabled()
     {

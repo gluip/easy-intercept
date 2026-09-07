@@ -22,9 +22,6 @@ interface AppInfo {
   version: string;
   uiPort: number;
   proxyPort: number;
-  dataRoot: string;
-  sessionsPath: string;
-  autoResponderPath: string;
 }
 
 const appInfo = ref<AppInfo | null>(null);

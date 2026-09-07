@@ -8,7 +8,7 @@ public record DetectedBrowser(string Id, string Name, string ExePath);
 
 public class BrowserLauncherService
 {
-    private const int ProxyPort = 9999;
+    private const int ProxyPort = Hosting.StartupOptions.ProxyPort;
     private readonly string _profileRootDir;
 
     public BrowserLauncherService(AppPaths paths)

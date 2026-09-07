@@ -12,7 +12,8 @@
 # report every failing check instead of aborting at the first one.
 
 API="http://localhost:${UI_PORT:-1337}"
-PROXY="http://localhost:${PROXY_PORT:-9999}"
+# Fixed in the app (Hosting/StartupOptions.ProxyPort); not configurable.
+PROXY="http://localhost:9999"
 PASS=0
 FAIL=0
 
@@ -57,8 +58,7 @@ INFO=$(curl -sf --max-time 3 "$API/api/info")
 INFO_PORTS=$(echo "$INFO" | json "d.uiPort + ':' + d.proxyPort")
 if [[ -n "$INFO_PORTS" ]]; then
   pass "/api/info reports ports $INFO_PORTS"
-  echo "    version:      $(echo "$INFO" | json "d.version")"
-  echo "    sessions dir: $(echo "$INFO" | json "d.sessionsPath")"
+  echo "    version: $(echo "$INFO" | json "d.version")"
 else
   fail "/api/info did not return usable JSON"
 fi

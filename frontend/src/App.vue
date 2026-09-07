@@ -234,10 +234,9 @@ onMounted(async () => {
   <div class="app">
     <header>
       <h1>EasyIntercept</h1>
-      <small :title="appInfo ? `Sessions: ${appInfo.sessionsPath} — Mock rules: ${appInfo.autoResponderPath}` : ''">
+      <small :title="appInfo ? `EasyIntercept ${appInfo.version}` : ''">
         proxy → localhost:{{ appInfo?.proxyPort ?? 9999 }}
         &nbsp;|&nbsp; ui → localhost:{{ appInfo?.uiPort ?? "…" }}
-        <template v-if="appInfo">&nbsp;|&nbsp; sessions → {{ appInfo.sessionsPath }}</template>
       </small>
       <button
         class="system-proxy-btn"

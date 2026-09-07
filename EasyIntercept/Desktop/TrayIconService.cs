@@ -111,7 +111,8 @@ public sealed class TrayIconService : IHostedService
             Font = new Font(menu.Font, FontStyle.Bold),
         };
 
-        var proxyToggle = new ToolStripMenuItem("System proxy (127.0.0.1:9999)", null, (_, _) => ToggleSystemProxy());
+        var proxyToggle = new ToolStripMenuItem(
+            $"System proxy (127.0.0.1:{StartupOptions.ProxyPort})", null, (_, _) => ToggleSystemProxy());
 
         var launchBrowser = new ToolStripMenuItem("Launch proxied browser");
         launchBrowser.Click += (_, _) =>

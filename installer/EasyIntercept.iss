@@ -51,7 +51,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "startup"; Description: "Start {#AppName} automatically when Windows starts (runs quietly with a tray icon)"; GroupDescription: "Startup:"
 Name: "installca"; Description: "Install the {#AppName} root CA certificate (required for HTTPS interception)"; GroupDescription: "HTTPS:"
-Name: "firewall"; Description: "Add a Windows Firewall rule for {#AppName} (proxy port {#ProxyPort} and the web UI)"; GroupDescription: "Network:"
+Name: "firewall"; Description: "Allow {#AppName} through Windows Firewall on private networks (needed to proxy phones and other devices)"; GroupDescription: "Network:"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
@@ -71,7 +71,9 @@ Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 ; Runs elevated: generates the CA (if missing) in %LOCALAPPDATA%\EasyIntercept\certs and trusts it machine-wide.
 Filename: "{app}\{#AppExe}"; Parameters: "--install-ca"; StatusMsg: "Installing root CA certificate..."; Flags: runhidden waituntilterminated; Tasks: installca
 Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""{#AppName}"""; Flags: runhidden waituntilterminated; Tasks: firewall
-Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""{#AppName}"" dir=in action=allow program=""{app}\{#AppExe}"" enable=yes"; StatusMsg: "Adding firewall rule..."; Flags: runhidden waituntilterminated; Tasks: firewall
+; Scoped to trusted networks on purpose: the web UI has no authentication and the proxy is an
+; open forward proxy, so this must never be opened up on a public network (café/hotel Wi-Fi).
+Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""{#AppName}"" dir=in action=allow program=""{app}\{#AppExe}"" profile=domain,private enable=yes"; StatusMsg: "Adding firewall rule..."; Flags: runhidden waituntilterminated; Tasks: firewall
 ; postinstall entries run as the original (non-elevated) user by default.
 Filename: "{app}\{#AppExe}"; Description: "Start {#AppName} now"; Flags: postinstall nowait skipifsilent
 
