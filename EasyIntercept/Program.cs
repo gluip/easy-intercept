@@ -138,6 +138,8 @@ app.MapGet("/api/info", () =>
         version,
         uiPort,
         proxyPort = StartupOptions.ProxyPort,
+        agentGuide = "/llms.txt",      // so an agent that only knows this endpoint can find the guide
+        openApi = "/openapi/v1.json",
     });
 });
 

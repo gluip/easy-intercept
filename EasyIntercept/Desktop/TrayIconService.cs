@@ -120,6 +120,7 @@ public sealed class TrayIconService : IHostedService
             if (launchBrowser.Tag is string browserId) LaunchBrowser(browserId); // single-browser case
         };
         var openSessions = new ToolStripMenuItem("Open sessions folder", null, (_, _) => Launcher.OpenFolder(_paths.Sessions));
+        var copyGuideLink = new ToolStripMenuItem("Copy link for coding agents", null, (_, _) => CopyAgentGuideLink());
 
         var exit = new ToolStripMenuItem("Exit", null, (_, _) => RequestExit());
 
@@ -128,6 +129,7 @@ public sealed class TrayIconService : IHostedService
         menu.Items.Add(proxyToggle);
         menu.Items.Add(launchBrowser);
         menu.Items.Add(openSessions);
+        menu.Items.Add(copyGuideLink);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exit);
 
@@ -181,6 +183,24 @@ public sealed class TrayIconService : IHostedService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Could not launch proxied browser {BrowserId} from tray", browserId);
+        }
+    }
+
+    // The guide at /llms.txt is only useful once a person points their agent at it; this puts the
+    // link on the clipboard so it can go straight into a project's CLAUDE.md / AGENTS.md.
+    private void CopyAgentGuideLink()
+    {
+        var link = $"{_uiUrl}/llms.txt";
+        try
+        {
+            Clipboard.SetText(link);   // menu clicks run on the STA tray thread, as the clipboard requires
+            _icon?.ShowBalloonTip(2500, "EasyIntercept",
+                $"Copied {link}\nPaste it into your project's CLAUDE.md or AGENTS.md so your coding agent knows how to use the proxy.",
+                ToolTipIcon.Info);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not copy the agent guide link to the clipboard");
         }
     }
 

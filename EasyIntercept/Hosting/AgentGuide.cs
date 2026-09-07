@@ -29,7 +29,7 @@ public static class AgentGuide
 
             ## Is it running?
 
-            - Web UI and API: {{ui}} (`curl {{ui}}/api/info` returns `{"version":"…","uiPort":{{uiPort}},"proxyPort":{{StartupOptions.ProxyPort}}}`)
+            - Web UI and API: {{ui}} (`curl {{ui}}/api/info` returns `{"version":"…","uiPort":{{uiPort}},"proxyPort":{{StartupOptions.ProxyPort}},"agentGuide":"/llms.txt","openApi":"/openapi/v1.json"}`)
             - Proxy: {{proxy}} (plain HTTP and HTTPS via CONNECT; this port is fixed)
             - OpenAPI document: {{ui}}/openapi/v1.json (machine-readable description of the API endpoints listed at the bottom of this page)
 
