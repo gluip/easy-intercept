@@ -35,3 +35,11 @@ EasyIntercept/sessions/1778_POST_generativelanguage_googleapis_com_v1beta_models
 EasyIntercept/auto-responder/
 # Installer / publish output
 dist/
+
+# Demo recorder (docs/demo): generated at record time
+docs/demo/node_modules/
+docs/demo/data/sessions/
+docs/demo/data/certs/
+docs/demo/data/browser-profiles/
+docs/demo/data/appsettings.json
+docs/demo/key-*.png
