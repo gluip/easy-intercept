@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import JsonTree from "./JsonTree.vue";
+import { parseJsonString } from "../utils/json-view";
 
-const props = defineProps<{
-  data: unknown;
-  depth?: number;
-  forceOpen?: boolean; // when set, overrides threshold-based default
-}>();
+const props = withDefaults(
+  defineProps<{
+    data: unknown;
+    depth?: number;
+    forceOpen?: boolean; // when set, overrides the size-based default
+    autoJson?: boolean; // expand strings holding JSON without a click
+    trailingComma?: boolean; // separator from the next sibling, drawn by this node
+  }>(),
+  // Vue casts an absent boolean prop to false; keep "not set" distinguishable
+  { forceOpen: undefined },
+);
 
 const depth = computed(() => props.depth ?? 0);
 
@@ -26,8 +33,17 @@ const arrLen = computed(() =>
   nodeType.value === "array" ? (props.data as unknown[]).length : 0,
 );
 
+const childCount = computed(() =>
+  nodeType.value === "object" ? objKeys.value.length : arrLen.value,
+);
+
+// A collapsed root says nothing but "{ 6 keys }", so show one level — but not
+// when that one level is thousands of rows (intercepted bodies get that big).
+const ROOT_MAX_CHILDREN = 50;
+
 function shouldDefaultOpen(): boolean {
   if (props.forceOpen !== undefined) return props.forceOpen;
+  if (depth.value === 0) return childCount.value <= ROOT_MAX_CHILDREN;
   if (nodeType.value === "object") return objKeys.value.length <= 3;
   if (nodeType.value === "array") return arrLen.value <= 5;
   return true;
@@ -37,20 +53,12 @@ const isOpen = ref(shouldDefaultOpen());
 
 // For string values: detect if they're valid JSON
 const parsedJson = computed(() => {
-  if (nodeType.value !== "string") return null;
-  const s = props.data as string;
-  if (s.length < 2) return null;
-  const t = s.trimStart();
-  if (!t.startsWith("{") && !t.startsWith("[")) return null;
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
+  const parsed = parseJsonString(props.data);
+  return parsed === undefined ? null : parsed;
 });
 
 const isExpandableAsJson = computed(() => parsedJson.value !== null);
-const expandedAsJson = ref(false);
+const expandedAsJson = ref(!!props.autoJson && parsedJson.value !== null);
 
 // String truncation for very long strings (e.g. base64 blobs)
 const MAX_LEN = 200;
@@ -65,28 +73,46 @@ const isLong = computed(() => strVal.value.length > MAX_LEN);
 
 <template>
   <!-- null -->
-  <span v-if="nodeType === 'null'" class="j-null">null</span>
+  <span v-if="nodeType === 'null'" class="j-null"
+    >null<span v-if="trailingComma" class="j-punct">,</span></span
+  >
 
   <!-- boolean -->
-  <span v-else-if="nodeType === 'boolean'" class="j-bool">{{ String(data) }}</span>
+  <span v-else-if="nodeType === 'boolean'" class="j-bool"
+    >{{ String(data) }}<span v-if="trailingComma" class="j-punct">,</span></span
+  >
 
   <!-- number -->
-  <span v-else-if="nodeType === 'number'" class="j-num">{{ data }}</span>
+  <span v-else-if="nodeType === 'number'" class="j-num"
+    >{{ data }}<span v-if="trailingComma" class="j-punct">,</span></span
+  >
 
   <!-- string -->
   <span v-else-if="nodeType === 'string'" class="j-str-wrap">
-    <span class="j-str">"{{ displayString }}"</span
-    ><span v-if="isLong && !showFull" class="j-ellipsis">…</span
-    ><button v-if="isLong && !showFull" class="j-btn" @click.stop="showFull = true"
-      >show all</button
-    ><button
+    <!-- While shown as a tree the raw text is just escaped noise, so hide it -->
+    <span v-if="expandedAsJson" class="j-str-hidden">json string</span>
+    <template v-else>
+      <span class="j-str">"{{ displayString }}"</span
+      ><span v-if="isLong && !showFull" class="j-ellipsis">…</span
+      ><span v-if="trailingComma && !isExpandableAsJson" class="j-punct">,</span
+      ><button v-if="isLong && !showFull" class="j-btn" @click.stop="showFull = true"
+        >show all</button
+      >
+    </template>
+    <button
       v-if="isExpandableAsJson"
       class="j-btn"
       @click.stop="expandedAsJson = !expandedAsJson"
       >{{ expandedAsJson ? "⌃ collapse JSON" : "{ } expand JSON" }}</button
-    >
+    ><span v-if="trailingComma && isExpandableAsJson && !expandedAsJson" class="j-punct">,</span>
     <div v-if="expandedAsJson && parsedJson !== null" class="j-nested">
-      <JsonTree :data="parsedJson" :depth="depth + 1" :force-open="forceOpen" />
+      <JsonTree
+        :data="parsedJson"
+        :depth="depth + 1"
+        :force-open="forceOpen"
+        :auto-json="autoJson"
+        :trailing-comma="trailingComma"
+      />
     </div>
   </span>
 
@@ -99,7 +125,8 @@ const isLong = computed(() => strVal.value.length > MAX_LEN);
     <template v-if="!isOpen">
       <span class="j-summary"
         >{{ objKeys.length }} {{ objKeys.length === 1 ? "key" : "keys" }}</span
-      ><span class="j-brace">}</span>
+      ><span class="j-brace">}</span
+      ><span v-if="trailingComma" class="j-punct">,</span>
     </template>
     <template v-else>
       <div class="j-children">
@@ -109,10 +136,12 @@ const isLong = computed(() => strVal.value.length > MAX_LEN);
             :data="(data as Record<string, unknown>)[key]"
             :depth="depth + 1"
             :force-open="forceOpen"
-          /><span v-if="i < objKeys.length - 1" class="j-punct">,</span>
+            :auto-json="autoJson"
+            :trailing-comma="i < objKeys.length - 1"
+          />
         </div>
       </div>
-      <div class="j-close">}</div>
+      <div class="j-close">}<span v-if="trailingComma" class="j-punct">,</span></div>
     </template>
   </span>
 
@@ -125,7 +154,8 @@ const isLong = computed(() => strVal.value.length > MAX_LEN);
     <template v-if="!isOpen">
       <span class="j-summary"
         >{{ arrLen }} {{ arrLen === 1 ? "item" : "items" }}</span
-      ><span class="j-brace">]</span>
+      ><span class="j-brace">]</span
+      ><span v-if="trailingComma" class="j-punct">,</span>
     </template>
     <template v-else>
       <div class="j-children">
@@ -134,10 +164,12 @@ const isLong = computed(() => strVal.value.length > MAX_LEN);
             :data="item"
             :depth="depth + 1"
             :force-open="forceOpen"
-          /><span v-if="i < arrLen - 1" class="j-punct">,</span>
+            :auto-json="autoJson"
+            :trailing-comma="i < arrLen - 1"
+          />
         </div>
       </div>
-      <div class="j-close">]</div>
+      <div class="j-close">]<span v-if="trailingComma" class="j-punct">,</span></div>
     </template>
   </span>
 </template>
@@ -189,7 +221,12 @@ const isLong = computed(() => strVal.value.length > MAX_LEN);
 }
 .j-str {
   color: #ce9178;
-  word-break: break-all;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.j-str-hidden {
+  color: #6a9955;
+  font-style: italic;
 }
 .j-num {
   color: #b5cea8;

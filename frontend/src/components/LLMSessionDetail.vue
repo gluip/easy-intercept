@@ -6,6 +6,7 @@ import { calcCost, formatCost } from "../utils/llm-cost";
 import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream, isOpenAIResponsesRequest, parseOpenAIResponses } from "../utils/llm-stream-parser";
 import { isGeminiInteractionsRequest, parseGeminiInteractionsRequest, parseGeminiInteractionsResponse, geminiInteractionsStepsToParts } from "../utils/gemini-interactions";
 import type { GPart, GTurn, ToolDef, ParsedLLM } from "../utils/llm-types";
+import ToolPayload from "./ToolPayload.vue";
 
 const props = defineProps<{
   session: ProxySession;
@@ -443,10 +444,6 @@ function isOpen(key: string) {
 
 // ── Helpers ────────────────────────────────────────────────
 
-function fmtJson(val: unknown): string {
-  return JSON.stringify(val, null, 2);
-}
-
 // Returns true if the turn has any displayable parts
 function hasContent(parts: GPart[]): boolean {
   return parts.some((p) => p.text || p.thinking || p.functionCall || p.functionResponse);
@@ -547,7 +544,11 @@ function argPreview(args: Record<string, unknown> | undefined): string {
               <span v-if="tool.description" class="tool-desc">{{ tool.description }}</span>
               <span v-if="tool.parameters" class="tool-schema-toggle">{{ isOpen('tool-' + tool.name) ? '▼' : '▶' }}</span>
             </div>
-            <pre v-if="tool.parameters && isOpen('tool-' + tool.name)" class="tool-schema">{{ fmtJson(tool.parameters) }}</pre>
+            <ToolPayload
+              v-if="tool.parameters && isOpen('tool-' + tool.name)"
+              class="tool-schema"
+              :value="tool.parameters"
+            />
           </div>
         </div>
       </div>
@@ -584,10 +585,11 @@ function argPreview(args: Record<string, unknown> | undefined): string {
                     {{ isOpen(`new-${pIdx}`) ? "▼" : "▶" }}
                   </span>
                 </div>
-                <pre
+                <ToolPayload
                   v-if="isOpen(`new-${pIdx}`)"
                   class="fn-body"
-                >{{ fmtJson(part.functionCall.args) }}</pre>
+                  :value="part.functionCall.args"
+                />
               </div>
             </template>
           </div>
@@ -635,10 +637,11 @@ function argPreview(args: Record<string, unknown> | undefined): string {
                       {{ isOpen(`${tIdx}-${pIdx}`) ? "▼" : "▶" }}
                     </span>
                   </div>
-                  <pre
+                  <ToolPayload
                     v-if="isOpen(`${tIdx}-${pIdx}`)"
                     class="fn-body"
-                  >{{ fmtJson(part.functionCall.args) }}</pre>
+                    :value="part.functionCall.args"
+                  />
                 </div>
 
                 <!-- Function response -->
@@ -653,10 +656,11 @@ function argPreview(args: Record<string, unknown> | undefined): string {
                       {{ isOpen(`r${tIdx}-${pIdx}`) ? "▼" : "▶" }}
                     </span>
                   </div>
-                  <pre
+                  <ToolPayload
                     v-if="isOpen(`r${tIdx}-${pIdx}`)"
                     class="fn-body"
-                  >{{ fmtJson(part.functionResponse.response) }}</pre>
+                    :value="part.functionResponse.response"
+                  />
                 </div>
               </template>
             </div>
@@ -853,10 +857,11 @@ function argPreview(args: Record<string, unknown> | undefined): string {
   background: #0d0d0d;
   font-size: 11px;
   font-family: "Courier New", monospace;
-  color: #ce9178;
+  color: #d4d4d4;
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: 280px;
   border-top: 1px solid #3e3e42;
-  white-space: pre;
 }
 
 /* ── Conversation ─────────────────────────────────────────── */
@@ -1052,7 +1057,6 @@ function argPreview(args: Record<string, unknown> | undefined): string {
   overflow-x: auto;
   max-height: 280px;
   overflow-y: auto;
-  white-space: pre;
 }
 
 /* ── Parse error ──────────────────────────────────────────── */
