@@ -15,15 +15,19 @@ export function unwrapJsonString(val: unknown): unknown {
 
 /**
  * Parse a string that holds a JSON object or array; returns undefined when the
- * value is not such a string. Scalars ("5", "true", quoted strings) are not
- * unwrapped — showing them as a tree adds nothing.
+ * value is not such a string. Success is always an object or array, so the
+ * "not JSON" sentinel stays distinguishable from a parse result. Scalars ("5",
+ * "true", quoted strings) are not unwrapped — showing them as a tree adds nothing.
  */
-export function parseJsonString(val: unknown): unknown {
+export function parseJsonString(val: unknown): object | undefined {
   if (typeof val !== "string") return undefined;
   const trimmed = val.trimStart();
   if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return undefined;
   try {
-    return JSON.parse(val);
+    const parsed: unknown = JSON.parse(val);
+    // A `{`/`[` document always parses to an object or array; checking keeps
+    // the return type honest instead of leaning on that.
+    return typeof parsed === "object" && parsed !== null ? parsed : undefined;
   } catch {
     return undefined;
   }

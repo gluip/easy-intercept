@@ -33,10 +33,17 @@ const arrLen = computed(() =>
   nodeType.value === "array" ? (props.data as unknown[]).length : 0,
 );
 
+const childCount = computed(() =>
+  nodeType.value === "object" ? objKeys.value.length : arrLen.value,
+);
+
+// A collapsed root says nothing but "{ 6 keys }", so show one level — but not
+// when that one level is thousands of rows (intercepted bodies get that big).
+const ROOT_MAX_CHILDREN = 50;
+
 function shouldDefaultOpen(): boolean {
   if (props.forceOpen !== undefined) return props.forceOpen;
-  // A collapsed root says nothing but "{ 6 keys }" — always show one level
-  if (depth.value === 0) return true;
+  if (depth.value === 0) return childCount.value <= ROOT_MAX_CHILDREN;
   if (nodeType.value === "object") return objKeys.value.length <= 3;
   if (nodeType.value === "array") return arrLen.value <= 5;
   return true;
@@ -101,7 +108,7 @@ const isLong = computed(() => strVal.value.length > MAX_LEN);
     <div v-if="expandedAsJson && parsedJson !== null" class="j-nested">
       <JsonTree
         :data="parsedJson"
-        :depth="depth"
+        :depth="depth + 1"
         :force-open="forceOpen"
         :auto-json="autoJson"
         :trailing-comma="trailingComma"
