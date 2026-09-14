@@ -29,7 +29,7 @@ public static class AgentGuide
 
             ## Is it running?
 
-            - Web UI and API: {{ui}} (`curl {{ui}}/api/info` returns `{"version":"…","uiPort":{{uiPort}},"proxyPort":{{StartupOptions.ProxyPort}},"agentGuide":"/llms.txt","openApi":"/openapi/v1.json"}`)
+            - Web UI and API: {{ui}} (`curl {{ui}}/api/info` returns `{"version":"…","uiPort":{{uiPort}},"proxyPort":{{StartupOptions.ProxyPort}},"os":"windows|macos|linux","agentGuide":"/llms.txt","openApi":"/openapi/v1.json"}`)
             - Proxy: {{proxy}} (plain HTTP and HTTPS via CONNECT; this port is fixed)
             - OpenAPI document: {{ui}}/openapi/v1.json (machine-readable description of the API endpoints listed at the bottom of this page)
 
@@ -106,7 +106,7 @@ public static class AgentGuide
             - Re-send a captured request: `POST {{ui}}/api/sessions/{id}/replay` returns `{"status":200,"body":"…"}`.
               The replay goes through the proxy again, so it is captured and can be mocked like the original.
             - Delete some: `POST {{ui}}/api/sessions/delete` with a JSON array of ids. Delete all: `DELETE {{ui}}/api/sessions`.
-            - Reveal the file in Windows Explorer for the user (Windows only): `POST {{ui}}/api/sessions/{id}/show-in-explorer`.
+            - Reveal the file for the user in Explorer (Windows) or Finder (macOS); on Linux it opens the containing folder: `POST {{ui}}/api/sessions/{id}/show-in-explorer`.
             - Export to Bruno: `POST {{ui}}/api/bruno/export` with `{"sessionIds":["…"],"collectionPath":"/absolute/folder","name":"optional"}`.
 
             ## Mock responses (Auto Responder)
@@ -147,13 +147,14 @@ public static class AgentGuide
             |---|---|---|
             | GET | `/llms.txt` | This page |
             | GET | `/openapi/v1.json` | OpenAPI 3 description of this API, for tooling that wants a machine-readable spec |
-            | GET | `/api/info` | Version and ports |
+            | GET | `/api/info` | Version, ports and host OS |
+            | GET | `/api/lan-addresses` | IPv4 addresses on which a phone on the same network can reach this machine (`{"addresses":["192.168.1.20"]}`) |
             | GET | `/api/sessions` | All captured sessions, newest first (camelCase) |
             | DELETE | `/api/sessions` | Delete all sessions and their files |
             | POST | `/api/sessions/delete` | Delete the sessions whose ids are in the JSON array body |
             | POST | `/api/sessions/{id}/replay` | Re-send a captured request through the proxy |
             | GET | `/api/sessions/{id}/file-path` | Absolute path of the session's JSON file |
-            | POST | `/api/sessions/{id}/show-in-explorer` | Reveal that file in Windows Explorer (Windows only) |
+            | POST | `/api/sessions/{id}/show-in-explorer` | Reveal that file in Explorer / Finder (Linux: opens its folder) |
             | POST | `/api/bruno/export` | Write sessions as `.bru` files into a Bruno collection folder |
             | GET / POST | `/api/auto-responders` | List / create mock rules |
             | PUT / DELETE | `/api/auto-responders/{id}` | Update / delete a mock rule |

@@ -10,6 +10,7 @@ import SessionDetail from "./components/SessionDetail.vue";
 import SessionViewer from "./components/SessionViewer.vue";
 import AutoResponder from "./components/AutoResponder.vue";
 import CompareViewer from "./components/CompareViewer.vue";
+import PhoneSetup from "./components/PhoneSetup.vue";
 
 const {
   sessions,
@@ -62,6 +63,10 @@ async function copyAgentSnippet() {
     console.error("Clipboard write failed:", e);
   }
 }
+
+const phoneSetupOpen = ref(false);
+// The page is served by the UI port itself, so it's a safe fallback before /api/info answers
+const uiPort = computed(() => appInfo.value?.uiPort ?? (Number(location.port) || 80));
 
 const browserLaunchBusy = ref(false);
 
@@ -267,6 +272,17 @@ onMounted(async () => {
         <span class="dot" />
         {{ systemProxyEnabled ? "System proxy: ON" : "System proxy: OFF" }}
       </button>
+      <button
+        class="phone-setup-btn"
+        @click="phoneSetupOpen = true"
+        title="QR-code en stappen om de CA op een iPhone/iPad te installeren en de proxy in te stellen"
+      >
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="6" y="2" width="12" height="20" rx="2" />
+          <line x1="11" y1="18" x2="13" y2="18" />
+        </svg>
+        Phone setup
+      </button>
       <div v-if="availableBrowsers.length" class="browser-launch-group">
         <button
           v-for="b in availableBrowsers"
@@ -379,6 +395,13 @@ onMounted(async () => {
       :session="viewerSession"
       :initial-tab="viewerTab"
       @close="closeViewer"
+    />
+
+    <PhoneSetup
+      v-if="phoneSetupOpen"
+      :ui-port="uiPort"
+      :proxy-port="appInfo?.proxyPort ?? 9999"
+      @close="phoneSetupOpen = false"
     />
 
     <CompareViewer
@@ -510,7 +533,8 @@ header small .copy-snippet:hover {
   align-items: center;
   gap: 6px;
 }
-.browser-launch-btn {
+.browser-launch-btn,
+.phone-setup-btn {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -522,7 +546,8 @@ header small .copy-snippet:hover {
   font-size: 11px;
   letter-spacing: 0.03em;
 }
-.browser-launch-btn:hover:not(:disabled) {
+.browser-launch-btn:hover:not(:disabled),
+.phone-setup-btn:hover {
   color: #d4d4d4;
   border-color: #569cd6;
 }

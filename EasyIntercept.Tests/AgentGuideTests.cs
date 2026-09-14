@@ -42,6 +42,7 @@ public class AgentGuideTests
     // Every route the app maps must be documented. Add a new endpoint → add it here and to the guide.
     [Theory]
     [InlineData("/api/info")]
+    [InlineData("/api/lan-addresses")]
     [InlineData("/api/sessions")]
     [InlineData("/api/sessions/delete")]
     [InlineData("/api/sessions/{id}/replay")]

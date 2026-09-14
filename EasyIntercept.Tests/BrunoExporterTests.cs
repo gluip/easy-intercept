@@ -178,6 +178,33 @@ public class BrunoExporterTests
     }
 
     [Fact]
+    public void FileName_StripsCharactersInvalidOnAnyOs()
+    {
+        // The collection may be checked out on Windows even when exported on macOS or Linux
+        var name = BrunoExporter.FileName(JsonPost, "a<b>c\"d/e\\f|g*h\ti");
+
+        Assert.Equal("a_b_c_d_e_f_g_h_i.bru", name);
+    }
+
+    [Theory]
+    [InlineData("con", "_con.bru")]
+    [InlineData("LPT1.backup", "_LPT1.backup.bru")]
+    [InlineData("Nul ", "_Nul.bru")]
+    [InlineData("console", "console.bru")] // only the exact device name is reserved
+    public void FileName_ReservedWindowsDeviceName_IsPrefixed(string custom, string expected)
+    {
+        Assert.Equal(expected, BrunoExporter.FileName(JsonPost, custom));
+    }
+
+    [Theory]
+    [InlineData("Create user. . ", "Create user.bru")]
+    [InlineData("...", "request.bru")]
+    public void FileName_TrailingDotsAndSpaces_AreTrimmed(string custom, string expected)
+    {
+        Assert.Equal(expected, BrunoExporter.FileName(JsonPost, custom));
+    }
+
+    [Fact]
     public void FileName_BlankCustomName_FallsBackToDefault()
     {
         Assert.Equal("POST_users.bru", BrunoExporter.FileName(JsonPost, "  "));

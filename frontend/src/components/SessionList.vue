@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import type { ProxySession } from "../types";
 import ContextMenu, { type MenuItem } from "./ContextMenu.vue";
+import { useProxy } from "../composables/useProxy";
 import { detectLLMProvider } from "../utils/llm-detection";
 import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream, isOpenAIResponsesRequest, parseOpenAIResponses } from "../utils/llm-stream-parser";
 import { isElasticsearchRequest, detectESOperation, parseESIndex } from "../utils/es-detection";
@@ -190,11 +191,24 @@ function timelineBarStyle(s: ProxySession): Record<string, string> {
   return { left: left + "%", width: width + "%" };
 }
 
+const { appInfo } = useProxy();
+
+// Named after the file manager of the machine running EasyIntercept, which is where it opens.
+// Neutral until /api/info says which OS that is, so a Mac never briefly shows "Explorer".
+const revealLabel = computed(() => {
+  switch (appInfo.value?.os) {
+    case "windows": return "Show in Explorer";
+    case "macos": return "Reveal in Finder";
+    case "linux": return "Open containing folder";
+    default: return "Show file location";
+  }
+});
+
 const menuItems = computed(() => {
   const items: MenuItem[] = [
     { label: "Copy URL", icon: "📋", action: "copy-url" },
     { label: "Copy file path", icon: "📄", action: "copy-file-path" },
-    { label: "Show in Explorer", icon: "📂", action: "show-in-explorer" },
+    { label: revealLabel.value, icon: "📂", action: "show-in-explorer" },
     { label: "Replay", icon: "🔁", action: "replay" },
     { label: "Add to Bruno", icon: "🐶", action: "add-to-bruno" },
     { label: "Mark", icon: "🎨", action: "mark", colors: MARK_COLORS },
@@ -263,7 +277,12 @@ function onMenuSelect(action: string) {
       .catch(() => {});
   }
   else if (action === "show-in-explorer") {
-    fetch(`/api/sessions/${session.id}/show-in-explorer`, { method: "POST" }).catch(() => {});
+    // fetch only rejects on network errors; a 404/500 from the server resolves normally
+    fetch(`/api/sessions/${session.id}/show-in-explorer`, { method: "POST" })
+      .then((r) => {
+        if (!r.ok) console.error(`Could not reveal the session file: HTTP ${r.status}`);
+      })
+      .catch((e) => console.error("Could not reveal the session file:", e));
   }
   else if (action === "replay") emit("replay", session);
   else if (action === "add-to-bruno") {

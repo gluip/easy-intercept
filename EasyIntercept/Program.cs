@@ -138,10 +138,15 @@ app.MapGet("/api/info", () =>
         version,
         uiPort,
         proxyPort = StartupOptions.ProxyPort,
+        os = Launcher.CurrentOs.ToString().ToLowerInvariant(), // "windows" | "macos" | "linux", for OS-specific labels
         agentGuide = "/llms.txt",      // so an agent that only knows this endpoint can find the guide
         openApi = "/openapi/v1.json",
     });
 });
+
+// Network addresses a phone on the same Wi-Fi can reach this machine on, for the "Phone setup"
+// dialog's QR code. Nothing sensitive: a remote caller already reached one of them.
+app.MapGet("/api/lan-addresses", () => Results.Ok(new { addresses = LanAddresses.Current() }));
 
 // Markdown cheat-sheet for coding agents (llms.txt convention). Folder paths are only filled in
 // for loopback callers, for the same reason /api/info carries none.
@@ -202,13 +207,7 @@ app.MapPost("/api/sessions/{id:guid}/show-in-explorer", (Guid id, SessionStore s
 {
     var path = store.GetFilePath(id);
     if (path is null || !File.Exists(path)) return Results.NotFound();
-    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-    {
-        FileName = "explorer.exe",
-        Arguments = $"/select,\"{path}\"",
-        UseShellExecute = true,
-    });
-    return Results.Ok();
+    return Launcher.RevealFile(path) ? Results.Ok() : Results.Problem("Could not open the file manager.");
 });
 
 app.MapPost("/api/bruno/export", (BrunoExportRequest body, SessionStore store) =>
