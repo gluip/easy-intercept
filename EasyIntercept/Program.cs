@@ -143,6 +143,10 @@ app.MapGet("/api/info", () =>
     });
 });
 
+// Network addresses a phone on the same Wi-Fi can reach this machine on, for the "Phone setup"
+// dialog's QR code. Nothing sensitive: a remote caller already reached one of them.
+app.MapGet("/api/lan-addresses", () => Results.Ok(new { addresses = LanAddresses.Current() }));
+
 // Markdown cheat-sheet for coding agents (llms.txt convention). Folder paths are only filled in
 // for loopback callers, for the same reason /api/info carries none.
 app.MapGet("/llms.txt", (HttpContext ctx, AppPaths paths) =>
