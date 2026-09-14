@@ -52,6 +52,11 @@ public static class BrunoExporter
     public static string DefaultName(ProxySession session) =>
         $"{session.Method} {UrlPath(session.Url)}";
 
+    // Collections are shared through git across operating systems, so strip what any of them rejects.
+    // Path.GetInvalidFileNameChars() only knows the current OS: on macOS that is just '/' and NUL.
+    private static readonly char[] InvalidFileNameChars =
+        [.. "<>:\"/\\|?*", .. Enumerable.Range(0, 32).Select(i => (char)i)];
+
     public static string FileName(ProxySession session, string? name = null)
     {
         string baseName;
@@ -73,7 +78,7 @@ public static class BrunoExporter
             }
             baseName = $"{session.Method}_{baseName}";
         }
-        foreach (var c in Path.GetInvalidFileNameChars())
+        foreach (var c in InvalidFileNameChars)
             baseName = baseName.Replace(c, '_');
         if (baseName.Length > 100) baseName = baseName[..100];
         return baseName + ".bru";

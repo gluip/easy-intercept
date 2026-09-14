@@ -178,6 +178,15 @@ public class BrunoExporterTests
     }
 
     [Fact]
+    public void FileName_StripsCharactersInvalidOnAnyOs()
+    {
+        // The collection may be checked out on Windows even when exported on macOS or Linux
+        var name = BrunoExporter.FileName(JsonPost, "a<b>c\"d/e\\f|g*h\ti");
+
+        Assert.Equal("a_b_c_d_e_f_g_h_i.bru", name);
+    }
+
+    [Fact]
     public void FileName_BlankCustomName_FallsBackToDefault()
     {
         Assert.Equal("POST_users.bru", BrunoExporter.FileName(JsonPost, "  "));
