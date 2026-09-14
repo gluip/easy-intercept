@@ -41,7 +41,9 @@ public class LauncherTests
         var psi = Launcher.RevealCommand(SessionFile, Launcher.HostOs.Linux);
 
         Assert.Equal("xdg-open", psi.FileName);
-        Assert.Equal(["/data/sessions"], psi.ArgumentList);
+        // Path.GetDirectoryName follows the host's separators ("\data\sessions" on the Windows CI runner);
+        // the Linux branch only ever runs on Linux, so compare against the host's own result
+        Assert.Equal([Path.GetDirectoryName(SessionFile)], psi.ArgumentList);
     }
 
     [Theory]
