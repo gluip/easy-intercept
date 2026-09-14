@@ -30,7 +30,7 @@ Free, open source, and runs great on both Windows and macOS. If something isn't 
 - **Compare view** — select any two sessions and get a true side-by-side diff (headers and body, both directions) with JSON/XML pretty-printing.
 - **Protocol-aware detail viewers** — GraphQL and Elasticsearch traffic also get their own smart, structured views (operation/query parsing, hit counts and timings), not just raw JSON.
 - **Copy, mark, and organize** — copy a request's URL or its on-disk file path, tag sessions with colored marks, filter by request kind (document/asset/API/backend), and multi-select with keyboard navigation for bulk delete.
-- **Right-click actions** — compare, show the session file in Explorer, or delete, all from the session list's context menu.
+- **Right-click actions** — compare, reveal the session file in Explorer or Finder, or delete, all from the session list's context menu.
 
 ### 🔌 Core proxy fundamentals
 - **First-class on Windows and macOS** — not just a Windows-first port: CA install scripts, the system-proxy toggle, and the dev build/run scripts (`restart.ps1` / `restart.sh`) all have a native counterpart on each OS.
@@ -93,7 +93,7 @@ Then point your device or app at `<host>:9999` as its HTTP/HTTPS proxy.
 Being upfront about where EasyIntercept isn't there yet — these are also good first contributions:
 - Auto Responder rules match on method + exact URL + an optional body predicate — no host-wildcard, path-prefix, or header matching yet, and no "modify a real passthrough response" transform.
 - No certificate-pinning bypass (apps that pin certificates won't be interceptable without extra tooling).
-- First-class OS integration (system-proxy toggle, CA install script, "Show in Explorer") currently covers Windows and macOS; Linux can run the proxy and UI but doesn't get these conveniences yet.
+- First-class OS integration (system-proxy toggle, CA install script, revealing a session file in Explorer/Finder) currently covers Windows and macOS; Linux can run the proxy and UI but doesn't get these conveniences yet.
 - Session history is capped at 1000 entries (oldest are evicted), not unlimited retention.
 
 ## How it compares to Fiddler

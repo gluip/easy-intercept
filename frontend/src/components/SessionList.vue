@@ -193,12 +193,14 @@ function timelineBarStyle(s: ProxySession): Record<string, string> {
 
 const { appInfo } = useProxy();
 
-// Named after the file manager of the machine running EasyIntercept, which is where it opens
+// Named after the file manager of the machine running EasyIntercept, which is where it opens.
+// Neutral until /api/info says which OS that is, so a Mac never briefly shows "Explorer".
 const revealLabel = computed(() => {
   switch (appInfo.value?.os) {
+    case "windows": return "Show in Explorer";
     case "macos": return "Reveal in Finder";
     case "linux": return "Open containing folder";
-    default: return "Show in Explorer";
+    default: return "Show file location";
   }
 });
 

@@ -106,7 +106,7 @@ public static class AgentGuide
             - Re-send a captured request: `POST {{ui}}/api/sessions/{id}/replay` returns `{"status":200,"body":"…"}`.
               The replay goes through the proxy again, so it is captured and can be mocked like the original.
             - Delete some: `POST {{ui}}/api/sessions/delete` with a JSON array of ids. Delete all: `DELETE {{ui}}/api/sessions`.
-            - Reveal the file in Windows Explorer for the user (Windows only): `POST {{ui}}/api/sessions/{id}/show-in-explorer`.
+            - Reveal the file for the user in Explorer (Windows) or Finder (macOS); on Linux it opens the containing folder: `POST {{ui}}/api/sessions/{id}/show-in-explorer`.
             - Export to Bruno: `POST {{ui}}/api/bruno/export` with `{"sessionIds":["…"],"collectionPath":"/absolute/folder","name":"optional"}`.
 
             ## Mock responses (Auto Responder)
@@ -153,7 +153,7 @@ public static class AgentGuide
             | POST | `/api/sessions/delete` | Delete the sessions whose ids are in the JSON array body |
             | POST | `/api/sessions/{id}/replay` | Re-send a captured request through the proxy |
             | GET | `/api/sessions/{id}/file-path` | Absolute path of the session's JSON file |
-            | POST | `/api/sessions/{id}/show-in-explorer` | Reveal that file in Windows Explorer (Windows only) |
+            | POST | `/api/sessions/{id}/show-in-explorer` | Reveal that file in Explorer / Finder (Linux: opens its folder) |
             | POST | `/api/bruno/export` | Write sessions as `.bru` files into a Bruno collection folder |
             | GET / POST | `/api/auto-responders` | List / create mock rules |
             | PUT / DELETE | `/api/auto-responders/{id}` | Update / delete a mock rule |
