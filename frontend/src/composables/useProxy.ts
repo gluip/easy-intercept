@@ -22,6 +22,7 @@ interface AppInfo {
   version: string;
   uiPort: number;
   proxyPort: number;
+  os?: "windows" | "macos" | "linux"; // of the machine running EasyIntercept, not the viewer
 }
 
 const appInfo = ref<AppInfo | null>(null);

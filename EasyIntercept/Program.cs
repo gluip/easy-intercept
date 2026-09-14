@@ -138,6 +138,7 @@ app.MapGet("/api/info", () =>
         version,
         uiPort,
         proxyPort = StartupOptions.ProxyPort,
+        os = Launcher.CurrentOs.ToString().ToLowerInvariant(), // "windows" | "macos" | "linux", for OS-specific labels
         agentGuide = "/llms.txt",      // so an agent that only knows this endpoint can find the guide
         openApi = "/openapi/v1.json",
     });
@@ -206,13 +207,7 @@ app.MapPost("/api/sessions/{id:guid}/show-in-explorer", (Guid id, SessionStore s
 {
     var path = store.GetFilePath(id);
     if (path is null || !File.Exists(path)) return Results.NotFound();
-    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-    {
-        FileName = "explorer.exe",
-        Arguments = $"/select,\"{path}\"",
-        UseShellExecute = true,
-    });
-    return Results.Ok();
+    return Launcher.RevealFile(path) ? Results.Ok() : Results.Problem("Could not open the file manager.");
 });
 
 app.MapPost("/api/bruno/export", (BrunoExportRequest body, SessionStore store) =>
