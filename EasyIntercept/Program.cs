@@ -21,9 +21,17 @@ EasyIntercept.Desktop.ConsoleAttach.TryAttachParentConsole();
 // regardless of the working directory (Start Menu, HKLM Run, terminal). Dev builds (dotnet run)
 // have no wwwroot in bin/, so they keep ASP.NET's default: the project directory.
 var exeDir = AppContext.BaseDirectory;
-var builder = Directory.Exists(Path.Combine(exeDir, "wwwroot"))
+var isPublishedBuild = Directory.Exists(Path.Combine(exeDir, "wwwroot"));
+var builder = isPublishedBuild
     ? WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = exeDir })
     : WebApplication.CreateBuilder(args);
+
+// A dev build serves EasyIntercept/wwwroot as of the last frontend build, which dotnet build doesn't do,
+// so opening it on start tends to show stale UI. Only published/installed builds open the browser.
+var openBrowser = options.ShouldOpenBrowser && isPublishedBuild;
+const string DevBrowserHint =
+    "Dev build: not opening a browser, because wwwroot is only as fresh as the last frontend build. " +
+    "Run `npm run dev` in frontend/ for live code, or ./restart.sh to rebuild it.";
 
 // User-level overrides live in <DataRoot>\appsettings.json (e.g. UiPort chosen at runtime).
 // Inserted after the shipped appsettings*.json so env vars and command line still win.
@@ -51,7 +59,9 @@ var uiPort = StartupOptions.GetUiPort(builder.Configuration);
 using var instanceMutex = new Mutex(true, @"Local\EasyIntercept", out var isFirstInstance);
 if (!isFirstInstance)
 {
-    if (options.ShouldOpenBrowser) Launcher.OpenUrl(StartupOptions.UiUrl(uiPort));
+    if (openBrowser) Launcher.OpenUrl(StartupOptions.UiUrl(uiPort));
+    else if (options.ShouldOpenBrowser)
+        Console.WriteLine($"EasyIntercept is already running at {StartupOptions.UiUrl(uiPort)}. {DevBrowserHint}");
     return 0;
 }
 
@@ -333,8 +343,10 @@ app.MapGet("/install", async (HttpContext ctx) =>
     await ctx.Response.WriteAsync(html);
 });
 
-if (options.ShouldOpenBrowser)
+if (openBrowser)
     app.Lifetime.ApplicationStarted.Register(() => Launcher.OpenUrl(StartupOptions.UiUrl(uiPort)));
+else if (options.ShouldOpenBrowser)
+    app.Logger.LogInformation(DevBrowserHint);
 
 await app.RunAsync();
 GC.KeepAlive(instanceMutex);
