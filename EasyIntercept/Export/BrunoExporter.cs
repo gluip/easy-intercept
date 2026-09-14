@@ -57,6 +57,11 @@ public static class BrunoExporter
     private static readonly char[] InvalidFileNameChars =
         [.. "<>:\"/\\|?*", .. Enumerable.Range(0, 32).Select(i => (char)i)];
 
+    // Device names Windows refuses as a file name, with or without an extension ("con.bru", "lpt1.x.bru")
+    private static readonly HashSet<string> ReservedWindowsNames = new(
+        ["CON", "PRN", "AUX", "NUL", .. Enumerable.Range(0, 10).SelectMany(i => new[] { $"COM{i}", $"LPT{i}" })],
+        StringComparer.OrdinalIgnoreCase);
+
     public static string FileName(ProxySession session, string? name = null)
     {
         string baseName;
@@ -81,6 +86,10 @@ public static class BrunoExporter
         foreach (var c in InvalidFileNameChars)
             baseName = baseName.Replace(c, '_');
         if (baseName.Length > 100) baseName = baseName[..100];
+        // Windows drops trailing dots and spaces, so such a name can't be checked out there (trim after truncating)
+        baseName = baseName.TrimEnd('.', ' ');
+        if (baseName.Length == 0) baseName = "request";
+        if (ReservedWindowsNames.Contains(baseName.Split('.')[0].TrimEnd(' '))) baseName = "_" + baseName;
         return baseName + ".bru";
     }
 

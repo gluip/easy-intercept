@@ -277,7 +277,12 @@ function onMenuSelect(action: string) {
       .catch(() => {});
   }
   else if (action === "show-in-explorer") {
-    fetch(`/api/sessions/${session.id}/show-in-explorer`, { method: "POST" }).catch(() => {});
+    // fetch only rejects on network errors; a 404/500 from the server resolves normally
+    fetch(`/api/sessions/${session.id}/show-in-explorer`, { method: "POST" })
+      .then((r) => {
+        if (!r.ok) console.error(`Could not reveal the session file: HTTP ${r.status}`);
+      })
+      .catch((e) => console.error("Could not reveal the session file:", e));
   }
   else if (action === "replay") emit("replay", session);
   else if (action === "add-to-bruno") {

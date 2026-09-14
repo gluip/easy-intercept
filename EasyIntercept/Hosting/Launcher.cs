@@ -44,7 +44,13 @@ public static class Launcher
         try
         {
             using var process = Process.Start(RevealCommand(path, CurrentOs));
-            return process is not null;
+            if (process is null) return false;
+            // explorer.exe exits with 1 even after opening the window, so its exit code says nothing
+            if (CurrentOs == HostOs.Windows) return true;
+            // open / xdg-open hand the path to the file manager and exit; non-zero means that failed
+            // (e.g. no desktop handler on Linux). Still running after the wait counts as launched.
+            var exited = process.WaitForExit(TimeSpan.FromSeconds(5));
+            return HelperSucceeded(exited ? process.ExitCode : null);
         }
         catch (Exception ex)
         {
@@ -52,6 +58,9 @@ public static class Launcher
             return false;
         }
     }
+
+    /// <summary>Outcome of <c>open -R</c> / <c>xdg-open</c>: <paramref name="exitCode"/> is null while it's still running.</summary>
+    public static bool HelperSucceeded(int? exitCode) => exitCode is null or 0;
 
     public static ProcessStartInfo RevealCommand(string path, HostOs os)
     {

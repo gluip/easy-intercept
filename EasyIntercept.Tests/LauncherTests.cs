@@ -43,4 +43,13 @@ public class LauncherTests
         Assert.Equal("xdg-open", psi.FileName);
         Assert.Equal(["/data/sessions"], psi.ArgumentList);
     }
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)] // e.g. open -R on a path that vanished, or xdg-open without a desktop handler
+    [InlineData(null, true)] // still running after the wait: the file manager was handed the path
+    public void Reveal_helper_exit_code_decides_success(int? exitCode, bool expected)
+    {
+        Assert.Equal(expected, Launcher.HelperSucceeded(exitCode));
+    }
 }

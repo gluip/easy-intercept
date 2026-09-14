@@ -54,20 +54,58 @@ async function copyUrl() {
   }
 }
 
+const card = ref<HTMLElement | null>(null);
+let focusBeforeOpen: HTMLElement | null = null;
+
 function onKeyDown(e: KeyboardEvent) {
   if (e.key === "Escape") emit("close");
+  else if (e.key === "Tab") keepFocusInside(e);
+}
+
+// The page behind the dialog is out of reach while it's open, so Tab cycles within the dialog
+function keepFocusInside(e: KeyboardEvent) {
+  const el = card.value;
+  if (!el) return;
+  const focusable = [...el.querySelectorAll<HTMLElement>("button, select, a[href], input")].filter(
+    (f) => !f.hasAttribute("disabled"),
+  );
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement;
+  if (!first || !last) {
+    e.preventDefault();
+    el.focus();
+  } else if (e.shiftKey && (active === first || !el.contains(active))) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && (active === last || !el.contains(active))) {
+    e.preventDefault();
+    first.focus();
+  }
 }
 
 onMounted(() => {
+  focusBeforeOpen = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   document.addEventListener("keydown", onKeyDown);
+  card.value?.focus();
   loadAddresses();
 });
-onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown));
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onKeyDown);
+  focusBeforeOpen?.focus(); // back to the "Phone setup" button
+});
 </script>
 
 <template>
   <div class="phone-backdrop" @click.self="emit('close')">
-    <div class="phone-card" role="dialog" aria-labelledby="phone-setup-title">
+    <div
+      ref="card"
+      class="phone-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="phone-setup-title"
+      tabindex="-1"
+    >
       <div class="phone-header">
         <span id="phone-setup-title">Intercept HTTPS on an iPhone / iPad</span>
         <button class="close-btn" title="Close (Esc)" @click="emit('close')">✕</button>
@@ -156,6 +194,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown));
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.phone-card:focus {
+  outline: none; /* focused on open only so Tab starts inside; the controls show their own focus */
 }
 
 .phone-header {

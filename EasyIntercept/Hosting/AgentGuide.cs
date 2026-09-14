@@ -29,7 +29,7 @@ public static class AgentGuide
 
             ## Is it running?
 
-            - Web UI and API: {{ui}} (`curl {{ui}}/api/info` returns `{"version":"…","uiPort":{{uiPort}},"proxyPort":{{StartupOptions.ProxyPort}},"agentGuide":"/llms.txt","openApi":"/openapi/v1.json"}`)
+            - Web UI and API: {{ui}} (`curl {{ui}}/api/info` returns `{"version":"…","uiPort":{{uiPort}},"proxyPort":{{StartupOptions.ProxyPort}},"os":"windows|macos|linux","agentGuide":"/llms.txt","openApi":"/openapi/v1.json"}`)
             - Proxy: {{proxy}} (plain HTTP and HTTPS via CONNECT; this port is fixed)
             - OpenAPI document: {{ui}}/openapi/v1.json (machine-readable description of the API endpoints listed at the bottom of this page)
 
@@ -147,7 +147,8 @@ public static class AgentGuide
             |---|---|---|
             | GET | `/llms.txt` | This page |
             | GET | `/openapi/v1.json` | OpenAPI 3 description of this API, for tooling that wants a machine-readable spec |
-            | GET | `/api/info` | Version and ports |
+            | GET | `/api/info` | Version, ports and host OS |
+            | GET | `/api/lan-addresses` | IPv4 addresses on which a phone on the same network can reach this machine (`{"addresses":["192.168.1.20"]}`) |
             | GET | `/api/sessions` | All captured sessions, newest first (camelCase) |
             | DELETE | `/api/sessions` | Delete all sessions and their files |
             | POST | `/api/sessions/delete` | Delete the sessions whose ids are in the JSON array body |
