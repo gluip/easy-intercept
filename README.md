@@ -79,6 +79,8 @@ dotnet run
 
 On Windows/macOS, `restart.ps1` / `restart.sh` do the same build-and-run in one step and keep the data folders (`sessions/`, `auto-responder/`, `certs/`) inside `EasyIntercept/` by setting `DataRoot`. A plain `dotnet run` without `DataRoot` uses `%LOCALAPPDATA%\EasyIntercept` (Windows), `~/Library/Application Support/EasyIntercept` (macOS) or `~/.local/share/EasyIntercept` (Linux) instead.
 
+A build run from source doesn't open a browser on start: it serves `EasyIntercept/wwwroot` as of the last frontend build, which `dotnet build` doesn't redo, so that page is easily stale. While working on the frontend, run `npm run dev` in `frontend/` (it proxies `/api` and `/proxy-hub` to the backend) and use the URL it prints. The installed app still opens the UI when it starts.
+
 ### Installing the CA certificate (for HTTPS interception)
 - **Windows:** the installer can do this for you; otherwise run `EasyIntercept.exe --install-ca` (or `install-ca.ps1`).
 - **macOS:** run `install-ca.sh`, or download the cert directly from `http://localhost:1337/ca`.
