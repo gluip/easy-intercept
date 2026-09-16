@@ -1,12 +1,15 @@
 name: Release
 
 # Releases are driven by the version in EasyIntercept/EasyIntercept.csproj:
-#   - push to main with a <Version> that has no tag yet  -> tag it, build the installer, publish the release
+#   - push to main with a <Version> that has no tag yet  -> tag it, build both installers, publish the release
 #   - push to main without a version change                -> nothing (the version job exits early)
 #   - push of a v* tag by hand                             -> build + publish for that tag (still supported)
-#   - manual run                                           -> build only, installer as a downloadable artifact
+#   - manual run                                           -> build only, installers as downloadable artifacts
 # Tagging and building happen in the same run on purpose: a tag pushed with the workflow's own token
 # does not trigger other workflows, so a separate tag-triggered build would never start.
+#
+# Assets: EasyIntercept-Setup-<version>.exe (Windows, Inno Setup) and EasyIntercept-<version>-arm64.dmg
+# (macOS, Apple Silicon). The macOS build is ad-hoc signed unless the signing secrets below are set.
 
 on:
   push:
@@ -96,26 +99,100 @@ jobs:
           name: EasyIntercept-Setup-${{ env.VERSION }}
           path: dist/EasyIntercept-Setup-*.exe
 
+  macos-installer:
+    needs: version
+    if: needs.version.outputs.publish == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest   # Apple Silicon; Xcode provides swiftc, hdiutil and notarytool
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      # Secrets cannot be tested in `if:` directly; presence of the certificate decides whether to sign.
+      HAS_SIGNING: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test EasyIntercept.Tests --nologo
+
+      # Optional: a "Developer ID Application" certificate as base64 .p12. Without it the disk image is
+      # ad-hoc signed and users have to allow the app once in System Settings (see README).
+      - name: Import signing identity
+        if: env.HAS_SIGNING == 'true'
+        env:
+          P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/build.keychain-db"
+          keychain_password="$(uuidgen)"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F'"' '/Developer ID Application/{print $2; exit}')"
+          [[ -n "$identity" ]] || { echo "No Developer ID Application identity in the certificate" >&2; exit 1; }
+          echo "MACOS_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Build disk image
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: ./build-macos.sh --version "$VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EasyIntercept-${{ env.VERSION }}-macos
+          path: dist/EasyIntercept-*.dmg
+
+      - name: Remove signing keychain
+        if: always() && env.HAS_SIGNING == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/build.keychain-db" || true
+
+  publish:
+    needs: [version, windows-installer, macos-installer]
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       - name: Tag (main push only)
-        if: needs.version.outputs.publish == 'true' && github.ref_type != 'tag'
-        shell: pwsh
+        if: github.ref_type != 'tag'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "v$env:VERSION" -m "EasyIntercept $env:VERSION"
-          git push origin "v$env:VERSION"
+          git tag "v$VERSION" -m "EasyIntercept $VERSION"
+          git push origin "v$VERSION"
 
       - name: Publish GitHub release
-        if: needs.version.outputs.publish == 'true'
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v$env:VERSION"
-          $asset = Get-ChildItem dist/EasyIntercept-Setup-*.exe | Select-Object -First 1 -ExpandProperty FullName
-          gh release view $tag 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $asset --clobber
-          } else {
-            gh release create $tag $asset --title $tag --generate-notes
-          }
+          set -euo pipefail
+          tag="v$VERSION"
+          assets=(dist/EasyIntercept-Setup-*.exe dist/EasyIntercept-*.dmg)
+          ls -l "${assets[@]}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --clobber
+          else
+            gh release create "$tag" "${assets[@]}" --title "$tag" --generate-notes
+          fi
