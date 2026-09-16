@@ -132,3 +132,31 @@ describe("extractLLMUsage - existing providers", () => {
     ).toBeNull();
   });
 });
+
+describe("extractLLMUsage - responses still streaming", () => {
+  it("does not throw on a half-received Anthropic SSE body", () => {
+    const partial =
+      'event: message_start\n' +
+      'data: {"type":"message_start","message":{"model":"claude-x","usage":{"input_tokens":5,"output_tokens":1}}}\n\n' +
+      'event: content_block_delta\n' +
+      'data: {"type":"content_block_delta","delta":{"type":"text_delta","te'; // cut mid-line
+    const s = fakeSession(
+      "https://api.anthropic.com/v1/messages",
+      { model: "claude-x", stream: true, messages: [] },
+      partial,
+    );
+    expect(() => extractLLMUsage(s)).not.toThrow();
+  });
+
+  it("does not throw on a half-received OpenAI SSE body", () => {
+    const partial =
+      'data: {"id":"x","choices":[{"delta":{"content":"He"}}]}\n\n' +
+      'data: {"id":"x","choices":[{"delta":{"con';
+    const s = fakeSession(
+      "https://api.openai.com/v1/chat/completions",
+      { model: "gpt-x", stream: true, messages: [] },
+      partial,
+    );
+    expect(() => extractLLMUsage(s)).not.toThrow();
+  });
+});

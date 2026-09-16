@@ -20,7 +20,7 @@ Free, open source, and runs great on both Windows and macOS. If something isn't 
 
 ### 🧠 Debugging LLM requests
 - **Zero-config provider detection** — automatically recognizes OpenAI, Anthropic, Google Gemini, and GitHub Copilot traffic just from the request URL.
-- **Streaming reconstruction** — reassembles SSE/streamed responses (including fragmented tool-call arguments and Anthropic "thinking" blocks) so streamed and non-streamed traffic look identical in the UI.
+- **Streaming reconstruction** — reassembles SSE/streamed responses (including fragmented tool-call arguments and Anthropic "thinking" blocks) so streamed and non-streamed traffic look identical in the UI. Token streams are relayed to your client as they arrive and the transcript grows live while the model is still talking.
 - **Built-in cost & token accounting** — per-model pricing tables for every major provider, computed client-side from the intercepted token usage. No extra API calls, no external service.
 - **Chat transcript view** — normalizes all four providers into one readable conversation: token pills (prompt/cached/thinking/response/cost), collapsible tool-call and tool-result blocks, and a schema panel for declared tools. Falls back to the raw payload if anything fails to parse.
 - **Session list superpowers for LLM traffic** — an "LLM only" filter with dedicated Tools/Results/Cost columns, an inline chat preview right in the list, and automatic color-grouping of requests that belong to the same multi-turn conversation.
@@ -37,6 +37,8 @@ Free, open source, and runs great on both Windows and macOS. If something isn't 
 - **HTTPS interception** via a locally-generated root CA and on-the-fly per-host certificates — plus a QR-code mobile install page (`/install`) so phones can install the cert by scanning a code, no cables or file transfers needed.
 - **One-click system proxy toggle** that actually flips the OS-level proxy setting (Windows registry / macOS `networksetup`), not just an in-app flag.
 - **Session replay** — right-click any session to resend it; replays round-trip back through EasyIntercept itself, so they're just as interceptable and mockable as the original traffic.
+- **Streaming passthrough** — response headers and every body chunk are forwarded the moment they arrive (SSE, chunked, long-polling, LLM token streams), never buffered until the end. The UI shows the status immediately and the body growing while it streams; the session file is written once the stream completes.
+- **WebSocket capture** — `ws://` and `wss://` connections go through the proxy too. Every message in both directions is recorded and shown live in a dedicated message view, including sub-protocol negotiation and close codes.
 
 ## Getting started
 
@@ -115,6 +117,8 @@ Being upfront about where EasyIntercept isn't there yet — these are also good 
 - No certificate-pinning bypass (apps that pin certificates won't be interceptable without extra tooling).
 - Packaged builds exist for Windows (installer) and macOS (disk image, Apple Silicon only and not yet signed with a Developer ID). Linux can run the proxy and UI from source, and revealing a session file opens its folder there, but it has no system-proxy toggle or CA install script yet.
 - Session history is capped at 1000 entries (oldest are evicted), not unlimited retention.
+- Captured bodies are capped at 16 MB per response and WebSocket sessions at 1000 messages / 64 KB per text message; the client still receives everything, the session file notes what was cut.
+- No HTTP/2 or gRPC through the proxy (clients are negotiated down to HTTP/1.1), and chunked *request* bodies are not yet relayed.
 
 ## How it compares to Fiddler
 
@@ -123,6 +127,8 @@ Being upfront about where EasyIntercept isn't there yet — these are also good 
 | LLM-aware traffic parsing (OpenAI/Anthropic/Gemini/Copilot) | ✅ built-in | ❌ |
 | Token usage & cost calculator | ✅ built-in | ❌ |
 | Streaming SSE reconstruction | ✅ built-in | ❌ |
+| Live streaming passthrough with a growing body in the UI | ✅ | partial |
+| WebSocket message inspection | ✅ built-in | ✅ |
 | Side-by-side session diff/compare | ✅ built-in | ❌ |
 | Mock rules as version-controllable JSON files with hot reload | ✅ | partial |
 | Mobile CA install via QR code | ✅ | ❌ |

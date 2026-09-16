@@ -8,6 +8,7 @@ import { extractLLMUsage } from "./utils/llm-usage";
 import SessionList from "./components/SessionList.vue";
 import SessionDetail from "./components/SessionDetail.vue";
 import SessionViewer from "./components/SessionViewer.vue";
+import { isPending, liveDurationMs } from "./utils/session-state";
 import AutoResponder from "./components/AutoResponder.vue";
 import CompareViewer from "./components/CompareViewer.vue";
 import PhoneSetup from "./components/PhoneSetup.vue";
@@ -106,7 +107,7 @@ const selectionStats = computed(() => {
   let minStart = Infinity, maxEnd = -Infinity;
   for (const s of selected) {
     const start = new Date(s.timestamp).getTime();
-    const dur = Math.max(s.responseStatus === 0 ? Date.now() - start : s.durationMs, 0);
+    const dur = liveDurationMs(s);
     totalWaitTime += dur;
     minStart = Math.min(minStart, start);
     maxEnd = Math.max(maxEnd, start + dur);
@@ -115,7 +116,7 @@ const selectionStats = computed(() => {
 
   for (const s of selected) {
     const provider = detectLLMProvider(s);
-    if (!provider || s.responseStatus === 0) continue;
+    if (!provider || isPending(s)) continue;
     const usage = extractLLMUsage(s);
     if (!usage) continue;
 

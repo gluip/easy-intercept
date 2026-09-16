@@ -81,7 +81,10 @@ public static class AgentGuide
               "ResponseStatus": 200,                     // 0 = still in flight
               "ResponseHeaders": { "Content-Type": "application/json" },
               "ResponseBody": "{\"id\":\"chatcmpl-…\",…}",   // a string
-              "DurationMs": 912
+              "DurationMs": 912,                         // request start → last response byte
+              "TimeToFirstByteMs": 120,                  // request start → response headers (0 = unknown)
+              "ResponseComplete": true,                  // false only while a stream / WebSocket is still open (in-memory; files are written when true)
+              "WebSocketMessages": null                  // WebSocket sessions only: [{ "Direction": "out"|"in", "OffsetMs": 12, "Type": "text"|"binary"|"close"|"note", "Data": "…" }]
             }
             ```
 
@@ -90,8 +93,15 @@ public static class AgentGuide
             - Text bodies (content type containing `text/`, `json`, `xml`, `javascript` or
               `x-www-form-urlencoded`; responses of 4 KB or less always) are stored verbatim as text.
               A JSON body is therefore a JSON string containing JSON: decode twice.
-            - Streaming responses (`text/event-stream`) are stored raw, event lines included; the UI
-              reconstructs them into one message, the file does not.
+            - Streaming responses (`text/event-stream`, chunked) are relayed to the client as they arrive and
+              stored raw, event lines included, once the stream ends; the UI reconstructs them into one message,
+              the file does not. Bodies over 16 MB are cut with a `[EasyIntercept: capture truncated …]` marker.
+              A file with `ResponseStatus` 0 is a request that never completed (the proxy stopped mid-flight).
+            - WebSocket sessions have `ResponseStatus` 101, a `ws://`/`wss://` URL and `WebSocketMessages` in
+              order (`"out"` = client → server). Binary payloads are stored as a size, text over 64 KB is cut,
+              and only the first 1000 messages are kept (a `"note"` entry says how many were dropped).
+            - A response whose relay ended abnormally carries the header `X-EasyIntercept-Note`
+              (`client disconnected`, `upstream error: …`).
             - Images up to 5 MB become a `data:<type>;base64,…` URL. Other binary bodies are replaced by
               a placeholder such as `[12345 bytes]` or `[123 bytes binary]`.
             - A response served by a mock rule carries the header `X-EasyIntercept-AutoResponder: true`.
@@ -165,7 +175,9 @@ public static class AgentGuide
             | GET | `/ca` | The root CA certificate (PEM) |
             | GET | `/install` | Human-facing page with a QR code to install the CA on a phone |
 
-            Realtime: the UI listens on a SignalR hub at `/proxy-hub` (events `NewSession`, `UpdateSession`).
+            Realtime: the UI listens on a SignalR hub at `/proxy-hub` (events `NewSession`, `UpdateSession`;
+            `UpdateSession` fires repeatedly while a response streams or a WebSocket is open, with the body
+            or message list so far and `ResponseComplete: false`, then once more when it completes).
             For an agent, polling `GET /api/sessions` or watching the sessions folder is simpler.
 
             ## Things to know

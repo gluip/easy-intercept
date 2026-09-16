@@ -105,6 +105,49 @@ else
   fail "Session count did not grow after a proxied request"
 fi
 
+# --- Streaming: the client must see bytes before the response ends ---
+
+# httpbin drips 5 bytes over 2 s. A buffering proxy holds the first byte until the end (~2 s);
+# a streaming one delivers it right away, so time-to-first-byte must be well under the total.
+DRIP=$(curl -s --max-time 20 -x "$PROXY" -N -o /dev/null -w '%{http_code} %{time_starttransfer} %{time_total}' \
+  'http://httpbin.org/drip?numbytes=5&duration=2&delay=0')
+if echo "$DRIP" | awk '{ exit !($1 == 200 && $2 < 1.0 && $3 >= 1.5) }'; then
+  pass "Streaming: first byte arrived before the stream ended (code ttfb total: $DRIP)"
+else
+  fail "Streaming: response was buffered or failed (code ttfb total: '$DRIP')"
+fi
+
+STREAM_LINES=$(curl -sN --max-time 20 -x "$PROXY" http://httpbin.org/stream/3 | grep -c '"url"')
+if [[ "$STREAM_LINES" == "3" ]]; then
+  pass "Chunked: httpbin.org/stream/3 relayed as 3 JSON lines"
+else
+  fail "Chunked: expected 3 JSON lines, got '$STREAM_LINES'"
+fi
+
+check "HEAD request completes without hanging" curl -sI --max-time 5 -x "$PROXY" http://httpbin.org/get -o /dev/null
+
+DRIP_SESSION=$(curl -sf --max-time 3 "$API/api/sessions" | json "(s => s ? [s.responseComplete, s.timeToFirstByteMs, s.durationMs].join(' ') : '')(d.find(x => x.url.includes('/drip')))")
+read -r DRIP_COMPLETE DRIP_TTFB DRIP_TOTAL <<<"$DRIP_SESSION"
+if [[ "$DRIP_COMPLETE" == "true" && -n "$DRIP_TTFB" && "$DRIP_TTFB" -lt "$DRIP_TOTAL" ]]; then
+  pass "Streamed session recorded as complete with ttfb < duration (${DRIP_TTFB}ms < ${DRIP_TOTAL}ms)"
+else
+  fail "Streamed session not recorded properly (responseComplete ttfb duration: '$DRIP_SESSION')"
+fi
+
+# --- WebSocket handshake (the message relay itself is covered by the .NET integration tests) ---
+
+# curl has no WebSocket client mode, but it will happily send the upgrade request; a 101 back through the
+# proxy proves the upstream handshake, the accept key and the tunnel detection. curl then waits for a body
+# that never comes, so the timeout exit code is expected.
+WS_HEAD=$(curl -s -i --http1.1 --max-time 6 "${TLS_OPTS[@]}" -x "$PROXY" \
+  -H 'Upgrade: websocket' -H 'Connection: Upgrade' -H 'Sec-WebSocket-Version: 13' \
+  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' https://echo.websocket.org/ 2>/dev/null | head -c 2000)
+if echo "$WS_HEAD" | grep -q "HTTP/1.1 101" && echo "$WS_HEAD" | grep -qi "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo="; then
+  pass "WebSocket: upgrade through the proxy answered with 101 and the right accept key"
+else
+  fail "WebSocket: no 101 for wss://echo.websocket.org (got: $(echo "$WS_HEAD" | grep -m1 'HTTP/1.1 [^2]' || echo "$WS_HEAD" | head -1))"
+fi
+
 # --- CA certificate ---
 
 CA_FILE=$(mktemp)

@@ -53,6 +53,16 @@ public class SessionStore
             File.WriteAllText(path, JsonSerializer.Serialize(session, _json));
     }
 
+    /// <summary>
+    /// Replaces the in-memory snapshot without touching the file. Used for the interim updates of a
+    /// streaming response; <see cref="Update"/> writes the file once the response is complete.
+    /// </summary>
+    public void UpdateInMemory(ProxySession session)
+    {
+        if (!_index.ContainsKey(session.Id)) return;
+        _index[session.Id] = session;
+    }
+
     public void Remove(Guid id)
     {
         _index.TryRemove(id, out _);

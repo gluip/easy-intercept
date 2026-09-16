@@ -170,6 +170,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown));
           <template v-if="session.responseStatus === 0">
             <span :class="statusClass">Pending…</span>
           </template>
+          <template v-else-if="session.responseComplete === false">
+            <span :class="statusClass">{{ session.responseStatus }}</span>
+            &nbsp;Response · streaming…
+          </template>
           <template v-else>
             <span :class="statusClass">{{ session.responseStatus }}</span>
             &nbsp;Response · {{ session.durationMs }}ms

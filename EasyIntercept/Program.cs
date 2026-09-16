@@ -96,15 +96,7 @@ builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSe
 builder.Services.AddOpenApi();
 builder.Services.AddSignalR();
 
-builder.Services.AddHttpClient("proxy", c => c.Timeout = Timeout.InfiniteTimeSpan)
-    .ConfigurePrimaryHttpMessageHandler(() =>
-    new HttpClientHandler
-    {
-        AllowAutoRedirect = false,
-        UseCookies = false,
-        AutomaticDecompression = System.Net.DecompressionMethods.All,
-        UseProxy = false,
-    });
+ProxyHttpClient.Configure(builder.Services);
 
 builder.Services.AddHttpClient("replay").ConfigurePrimaryHttpMessageHandler(() =>
     new HttpClientHandler
