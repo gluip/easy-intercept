@@ -63,7 +63,7 @@ public class ProxyServer : BackgroundService
 
             _ = Task.Run(async () =>
             {
-                var conn = new ProxyConnection(client, _sessions, _hub, _httpClientFactory, _certs, _autoResponder);
+                var conn = new ProxyConnection(client, _sessions, _hub, _httpClientFactory, _certs, _autoResponder, stoppingToken);
                 try
                 {
                     await conn.HandleAsync();

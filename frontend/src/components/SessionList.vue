@@ -11,6 +11,7 @@ import { calcCost, formatCost } from "../utils/llm-cost";
 import { extractLLMUsage } from "../utils/llm-usage";
 import { isGeminiInteractionsRequest, parseGeminiInteractionsResponse, geminiInteractionsPreviewText, geminiInteractionsToolCallNames, geminiInteractionsTrailingResults } from "../utils/gemini-interactions";
 import { detectRequestKind, REQUEST_KIND_LABELS, REQUEST_KIND_ICONS, type RequestKind } from "../utils/request-kind-detection";
+import { isPending, isStreaming, isWebSocket, liveDurationMs } from "../utils/session-state";
 
 const props = defineProps<{
   sessions: readonly ProxySession[];
@@ -173,8 +174,7 @@ const timelineRange = computed(() => {
   const starts = filteredSessions.value.map((s) => new Date(s.timestamp).getTime());
   const ends = filteredSessions.value.map((s) => {
     const start = new Date(s.timestamp).getTime();
-    const dur = s.responseStatus === 0 ? Date.now() - start : s.durationMs;
-    return start + Math.max(dur, 0);
+    return start + liveDurationMs(s);
   });
   const min = Math.min(...starts);
   const max = Math.max(...ends);
@@ -185,9 +185,9 @@ function timelineBarStyle(s: ProxySession): Record<string, string> {
   const range = timelineRange.value;
   if (!range) return {};
   const start = new Date(s.timestamp).getTime();
-  const dur = s.responseStatus === 0 ? Date.now() - start : s.durationMs;
+  const dur = liveDurationMs(s);
   const left = ((start - range.min) / range.span) * 100;
-  const width = Math.max((Math.max(dur, 0) / range.span) * 100, 0.5);
+  const width = Math.max((dur / range.span) * 100, 0.5);
   return { left: left + "%", width: width + "%" };
 }
 
@@ -872,7 +872,12 @@ function llmCost(s: ProxySession): string | null {
           <td v-if="visibleCols.method" class="col-method" :class="methodClass(s.method)">
             {{ s.method }}
           </td>
-          <td v-if="visibleCols.status" class="col-status" :class="statusClass(s.responseStatus)">
+          <td
+            v-if="visibleCols.status"
+            class="col-status"
+            :class="[statusClass(s.responseStatus), { streaming: isStreaming(s) }]"
+            :title="isStreaming(s) ? (isWebSocket(s) ? 'WebSocket open' : 'Streaming…') : ''"
+          >
             <span v-if="s.responseStatus === 0" class="pending-dots">···</span>
             <template v-else>{{ s.responseStatus }}</template>
           </td>
@@ -884,6 +889,7 @@ function llmCost(s: ProxySession): string | null {
               title="Auto Responder"
               >⚡</span
             >
+            <span v-if="isWebSocket(s)" class="ws-badge" title="WebSocket">WS</span>
             <span
               class="kind-badge"
               :class="'kind-' + detectRequestKind(s)"
@@ -911,15 +917,15 @@ function llmCost(s: ProxySession): string | null {
               :title="r.snippet"
             >{{ r.label }}</span>
           </td>
-          <td v-if="visibleCols.dur" class="col-dur">{{ s.responseStatus === 0 ? "" : s.durationMs }}</td>
-          <td v-if="llmOnly" class="col-cost">{{ s.responseStatus === 0 ? "" : (llmCost(s) ?? "") }}</td>
+          <td v-if="visibleCols.dur" class="col-dur">{{ isPending(s) ? "" : s.durationMs }}</td>
+          <td v-if="llmOnly" class="col-cost">{{ isPending(s) ? "" : (llmCost(s) ?? "") }}</td>
           <td v-if="timelineMode" class="col-timeline">
             <div class="timeline-track">
               <span
                 class="timeline-bar"
                 :class="'kind-' + detectRequestKind(s)"
                 :style="timelineBarStyle(s)"
-                :title="`${new Date(s.timestamp).toLocaleTimeString()} · ${s.responseStatus === 0 ? 'pending' : s.durationMs + 'ms'}`"
+                :title="`${new Date(s.timestamp).toLocaleTimeString()} · ${isPending(s) ? 'pending' : s.durationMs + 'ms'}`"
               />
             </div>
           </td>
@@ -1121,6 +1127,23 @@ td {
 .pending-dots {
   display: inline-block;
   animation: pending-pulse 1.2s ease-in-out infinite;
+}
+
+/* status known, body still streaming (or WebSocket still open) */
+.col-status.streaming {
+  animation: pending-pulse 1.2s ease-in-out infinite;
+}
+
+.ws-badge {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: #7c3aed;
+  color: #fff;
 }
 
 @keyframes pending-pulse {

@@ -8,6 +8,8 @@ import LLMSessionDetail from "./LLMSessionDetail.vue";
 import ElasticsearchSessionDetail from "./ElasticsearchSessionDetail.vue";
 import GraphQLSessionDetail from "./GraphQLSessionDetail.vue";
 import SessionHeaders from "./SessionHeaders.vue";
+import WebSocketSessionDetail from "./WebSocketSessionDetail.vue";
+import { isWebSocket as isWebSocketSession } from "../utils/session-state";
 
 const props = defineProps<{
   session: ProxySession;
@@ -18,7 +20,8 @@ const emit = defineEmits<{
   openViewer: [session: ProxySession, tab: "request" | "response"];
 }>();
 
-const isLLM = computed(() => isLLMRequest(props.session));
+const isWebSocket = computed(() => isWebSocketSession(props.session));
+const isLLM = computed(() => !isWebSocket.value && isLLMRequest(props.session));
 const isES = computed(() => !isLLM.value && isElasticsearchRequest(props.session));
 const isGraphQL = computed(() => !isLLM.value && !isES.value && isGraphQLRequest(props.session));
 
@@ -238,6 +241,7 @@ function downloadRequestResponse() {
     <h2>{{ session.method }} {{ session.url }}</h2>
     <div class="meta">
       <template v-if="session.responseStatus === 0">Pending…</template>
+      <template v-else-if="session.responseComplete === false">{{ session.responseStatus }} · {{ isWebSocket ? "open" : "streaming…" }}</template>
       <template v-else>{{ session.responseStatus }} · {{ session.durationMs }}ms</template>
       ·
       {{ new Date(session.timestamp).toLocaleTimeString() }}
@@ -255,9 +259,12 @@ function downloadRequestResponse() {
       </button>
     </div>
 
+    <!-- WebSocket viewer -->
+    <WebSocketSessionDetail v-if="isWebSocket" :session="session" />
+
     <!-- LLM request viewer -->
     <LLMSessionDetail
-      v-if="isLLM"
+      v-else-if="isLLM"
       :session="session"
       @open-viewer="(s, t) => emit('openViewer', s, t)"
     />
