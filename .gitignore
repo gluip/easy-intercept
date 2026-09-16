@@ -43,3 +43,6 @@ docs/demo/data/certs/
 docs/demo/data/browser-profiles/
 docs/demo/data/appsettings.json
 docs/demo/key-*.png
+
+# macOS icon scratch (installer/macos/make-icns.sh)
+*.iconset/

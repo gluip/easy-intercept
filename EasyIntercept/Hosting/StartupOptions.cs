@@ -17,6 +17,12 @@ public sealed class StartupOptions
     public bool NoBrowser { get; init; }
     public bool NoTray { get; init; }
 
+    /// <summary>
+    /// Pid of the desktop shell that started us (the macOS menu bar app). When it disappears, so do we,
+    /// so a crashed shell never leaves a server behind holding the ports. <c>--parent-pid=1234</c>.
+    /// </summary>
+    public int? ParentPid { get; init; }
+
     public bool ShouldOpenBrowser => !Autostart && !NoBrowser;
 
     public static StartupOptions Parse(string[] args)
@@ -28,7 +34,20 @@ public sealed class StartupOptions
             Autostart = set.Contains("--autostart"),
             NoBrowser = set.Contains("--no-browser"),
             NoTray = set.Contains("--no-tray"),
+            ParentPid = ParseParentPid(args),
         };
+    }
+
+    private const string ParentPidPrefix = "--parent-pid=";
+
+    private static int? ParseParentPid(string[] args)
+    {
+        foreach (var arg in args)
+        {
+            if (!arg.StartsWith(ParentPidPrefix, StringComparison.OrdinalIgnoreCase)) continue;
+            return int.TryParse(arg.AsSpan(ParentPidPrefix.Length), out var pid) && pid > 0 ? pid : null;
+        }
+        return null;
     }
 
     /// <summary>Strips our own flags so ASP.NET's command-line config provider doesn't choke on them.</summary>
@@ -36,7 +55,9 @@ public sealed class StartupOptions
     {
         var own = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { "--install-ca", "--autostart", "--no-browser", "--no-tray" };
-        return args.Where(a => !own.Contains(a)).ToArray();
+        return args
+            .Where(a => !own.Contains(a) && !a.StartsWith(ParentPidPrefix, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
     }
 
     public static int GetUiPort(IConfiguration config) =>

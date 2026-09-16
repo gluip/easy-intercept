@@ -54,7 +54,25 @@ Data (captured sessions, mock rules, browser profiles, the CA) lives in `%LOCALA
 
 To build the installer yourself, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`) and run `.\build-installer.ps1 -Version 0.1.0`; the setup exe lands in `dist/`.
 
-**Releasing** is driven by the version number: bump `<Version>` in `EasyIntercept/EasyIntercept.csproj` in your PR and merge it. GitHub Actions then tags `v<version>`, builds the installer and publishes the release with generated notes. Merges that don't change the version don't release anything. Pushing a `v*` tag by hand still works, and a manual workflow run builds the installer as a downloadable artifact without publishing.
+**Releasing** is driven by the version number: bump `<Version>` in `EasyIntercept/EasyIntercept.csproj` in your PR and merge it. GitHub Actions then tags `v<version>`, builds the Windows installer and the macOS disk image and publishes the release with generated notes. Merges that don't change the version don't release anything. Pushing a `v*` tag by hand still works, and a manual workflow run builds both as downloadable artifacts without publishing.
+
+### macOS: disk image
+
+Download `EasyIntercept-<version>-arm64.dmg` (Apple Silicon) from the [Releases](https://github.com/gluip/easy-intercept/releases) page, open it and drag **EasyIntercept** to *Applications*. No .NET runtime or Node.js needed.
+
+The build is not yet signed with an Apple Developer ID, so the first launch needs one extra step: macOS reports that the app "cannot be verified". Close that message, open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to EasyIntercept (on older macOS versions, right-click the app → *Open* does the same). Alternatively, in a terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/EasyIntercept.app
+```
+
+EasyIntercept then runs quietly with a **⚡ icon in the menu bar** (top right, next to Wi-Fi and the clock), without a window or Dock icon, and opens the UI in your browser. The first launch asks whether it should install the root CA (macOS prompts for your password; the CA is trusted for your user only) and whether it should **open at login**; both can be changed later from the menu. The icon's menu offers *Open EasyIntercept*, *System proxy on/off*, *Launch proxied browser*, *Open sessions folder*, *Copy link for coding agents*, *Install CA certificate*, *Open at login* and *Quit*.
+
+Launching the app while it is already running only opens the browser. If the configured UI port is taken at startup, a dialog lets you pick another one. With the macOS firewall enabled, macOS asks once whether EasyIntercept may accept incoming connections (needed for the phone setup); allow it.
+
+Data lives in `~/Library/Application Support/EasyIntercept` (same layout and `appsettings.json` overrides as on Windows) and the server log in `~/Library/Logs/EasyIntercept/server.log`. To uninstall, turn off *Open at login*, quit, and drag the app to the Trash; the data folder, the trusted CA (remove it in Keychain Access or with `security remove-trusted-cert`) and the system-proxy setting are yours to clean up.
+
+To build the disk image yourself you need the .NET 10 SDK, Node.js and the Xcode Command Line Tools (`xcode-select --install`); run `./build-macos.sh --version 0.1.0` and find the `.dmg` in `dist/`. Setting `MACOS_SIGN_IDENTITY` (plus `APPLE_ID`, `APPLE_TEAM_ID` and `APPLE_APP_PASSWORD` for notarization) produces a properly signed image; the release workflow does the same when the matching repository secrets exist.
 
 ### From source
 
@@ -83,7 +101,7 @@ A build run from source doesn't open a browser on start: it serves `EasyIntercep
 
 ### Installing the CA certificate (for HTTPS interception)
 - **Windows:** the installer can do this for you; otherwise run `EasyIntercept.exe --install-ca` (or `install-ca.ps1`).
-- **macOS:** run `install-ca.sh`, or download the cert directly from `http://localhost:1337/ca`.
+- **macOS:** the app offers this on first launch and under *Install CA certificate…* in its menu (trusts the CA for your user, no admin rights needed); the same from a terminal is `EasyIntercept --install-ca` (in `EasyIntercept.app/Contents/Resources/server/`). For a build run from source, `install-ca.sh` installs it system-wide with `sudo`, or download the cert directly from `http://localhost:1337/ca`.
 - **Mobile:** open `http://localhost:1337/install` on your phone (or scan the QR code it shows) for step-by-step iOS install instructions.
 
 Both `install-ca.sh` and `install-ca.ps1` fetch the certificate from the *running* instance (`http://localhost:<UI_PORT>/ca`) and only fall back to `$DataRoot`, the default data root and the repo's dev folder if nothing is listening. That matters because the CA lives inside the data root: switching between `restart.sh`/`restart.ps1` (data root = the repo) and a normal run (default data root) means two different CAs, and the browser will show certificate errors for the one that isn't trusted. The scripts warn when a *different* EasyIntercept CA is already trusted; pass an explicit path (`./install-ca.sh path/to/easyntercept-ca.crt`) to install a specific one.
@@ -95,7 +113,7 @@ Then point your device or app at `<host>:9999` as its HTTP/HTTPS proxy.
 Being upfront about where EasyIntercept isn't there yet — these are also good first contributions:
 - Auto Responder rules match on method + exact URL + an optional body predicate — no host-wildcard, path-prefix, or header matching yet, and no "modify a real passthrough response" transform.
 - No certificate-pinning bypass (apps that pin certificates won't be interceptable without extra tooling).
-- First-class OS integration (system-proxy toggle, CA install script) currently covers Windows and macOS. Linux can run the proxy and UI, and revealing a session file opens its folder there, but it has no system-proxy toggle or CA install script yet.
+- Packaged builds exist for Windows (installer) and macOS (disk image, Apple Silicon only and not yet signed with a Developer ID). Linux can run the proxy and UI from source, and revealing a session file opens its folder there, but it has no system-proxy toggle or CA install script yet.
 - Session history is capped at 1000 entries (oldest are evicted), not unlimited retention.
 
 ## How it compares to Fiddler

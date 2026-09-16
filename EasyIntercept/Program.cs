@@ -129,6 +129,10 @@ if (!options.NoTray)
 
 var app = builder.Build();
 
+// Started by the macOS menu bar app: follow it down when it dies (see ParentWatchdog).
+if (options.ParentPid is int parentPid)
+    ParentWatchdog.Start(parentPid, app.Lifetime, app.Logger);
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -164,6 +168,15 @@ app.MapGet("/llms.txt", (HttpContext ctx, AppPaths paths) =>
 {
     var local = ctx.Connection.RemoteIpAddress is { } ip && System.Net.IPAddress.IsLoopback(ip);
     return Results.Text(AgentGuide.Render(uiPort, local ? paths : null), "text/markdown; charset=utf-8");
+});
+
+// Folder paths for the desktop shell (the macOS menu bar app's "Open sessions folder"). Loopback
+// only, for the same reason /api/info carries none.
+app.MapGet("/api/paths", (HttpContext ctx, AppPaths paths) =>
+{
+    var local = ctx.Connection.RemoteIpAddress is { } ip && System.Net.IPAddress.IsLoopback(ip);
+    if (!local) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    return Results.Ok(new { root = paths.Root, sessions = paths.Sessions, autoResponder = paths.AutoResponder, certs = paths.Certs });
 });
 
 app.MapGet("/api/sessions", (SessionStore store) =>

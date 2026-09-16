@@ -49,7 +49,8 @@ public static class AgentGuide
             **HTTPS** is re-signed with EasyIntercept's own root CA. Fetch it with `curl -o easyintercept-ca.crt {{ui}}/ca`
             (PEM) and trust it for the tool you use: curl `--cacert easyintercept-ca.crt`, Node `NODE_EXTRA_CA_CERTS=easyintercept-ca.crt`,
             Python `REQUESTS_CA_BUNDLE=easyintercept-ca.crt` or `SSL_CERT_FILE=…`. Or trust it system-wide
-            (Windows: the installer task or `EasyIntercept.exe --install-ca`; macOS: `install-ca.sh`).
+            (Windows: the installer task or `EasyIntercept.exe --install-ca`; macOS: *Install CA certificate…* in the
+            menu bar app's menu, or `install-ca.sh` for a build run from source).
             Hosts that pin their certificate cannot be intercepted; expect TLS errors for those.
 
             Quick check that capture works:
@@ -148,6 +149,7 @@ public static class AgentGuide
             | GET | `/llms.txt` | This page |
             | GET | `/openapi/v1.json` | OpenAPI 3 description of this API, for tooling that wants a machine-readable spec |
             | GET | `/api/info` | Version, ports and host OS |
+            | GET | `/api/paths` | Data folders (`{"root":"…","sessions":"…","autoResponder":"…","certs":"…"}`); loopback callers only, others get 403 |
             | GET | `/api/lan-addresses` | IPv4 addresses on which a phone on the same network can reach this machine (`{"addresses":["192.168.1.20"]}`) |
             | GET | `/api/sessions` | All captured sessions, newest first (camelCase) |
             | DELETE | `/api/sessions` | Delete all sessions and their files |
