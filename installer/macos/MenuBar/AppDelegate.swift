@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settings = Settings.load()
@@ -25,7 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        if !Ports.isFree(settings.uiPort) {
+        // The proxy port is fixed, so a UI port equal to it is "busy" even before anything listens.
+        if settings.uiPort == Settings.proxyPort || !Ports.isFree(settings.uiPort) {
             guard let chosen = PortPrompt.show(busyPort: settings.uiPort,
                                                suggestedPort: Ports.findFree(from: settings.uiPort + 1)) else {
                 NSApp.terminate(nil)
@@ -37,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Alerts.warn("Could not save the port", "\(error.localizedDescription)\n\nUsing port \(chosen) for this session only.")
             }
             settings.uiPort = chosen
+            server.uiPortOverride = chosen
             api = ServerApi(baseUrl: settings.uiUrl)
         }
 
@@ -191,9 +194,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static func launchedAsLoginItem() -> Bool {
         guard let event = NSAppleEventManager.shared().currentAppleEvent,
               event.eventClass == AEEventClass(kCoreEventClass),
-              event.eventID == AEEventID(kAEOpenApplication),
-              let property = event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData)) else { return false }
-        return property.enumCodeValue == OSType(keyAELaunchedAsLogInItem)
+              event.eventID == AEEventID(kAEOpenApplication) else { return false }
+        // Documented form: the property-data parameter holds the launched-as-login-item enum …
+        if let property = event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData)),
+           property.enumCodeValue == OSType(keyAELaunchedAsLogInItem) {
+            return true
+        }
+        // … but be lenient and also accept the marker as a boolean parameter of its own.
+        if let flag = event.paramDescriptor(forKeyword: AEKeyword(keyAELaunchedAsLogInItem)), flag.booleanValue {
+            return true
+        }
+        return false
     }
 
     /// Cocoa doesn't route a plain SIGTERM (logout, `kill`) through applicationShouldTerminate; do it

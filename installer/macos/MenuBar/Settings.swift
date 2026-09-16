@@ -21,12 +21,17 @@ struct Settings {
 
     static func load() -> Settings {
         var settings = Settings(uiPort: defaultUiPort)
-        if let value = readJson()?["UiPort"] {
-            if let port = value as? Int { settings.uiPort = port }
-            else if let text = value as? String, let port = Int(text) { settings.uiPort = port }
+        // Anything outside the valid range is ignored (the file is hand-editable); the default then
+        // goes through the normal busy-port flow if needed.
+        if let value = readJson()?["UiPort"],
+           let port = (value as? Int) ?? Int((value as? String) ?? ""),
+           isValidPort(port) {
+            settings.uiPort = port
         }
         return settings
     }
+
+    static func isValidPort(_ port: Int) -> Bool { (1...65535).contains(port) }
 
     /// Writes UiPort and keeps every other key in the file (DataRoot, …) as it was.
     static func save(uiPort: Int) throws {

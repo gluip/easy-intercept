@@ -1,8 +1,10 @@
+import Darwin
 import Foundation
 
 /// Port checks with the same semantics as Launcher.IsPortFree / FindFreePort on the .NET side.
 enum Ports {
     static func isFree(_ port: Int) -> Bool {
+        guard Settings.isValidPort(port) else { return false }
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { return false }
         defer { close(fd) }

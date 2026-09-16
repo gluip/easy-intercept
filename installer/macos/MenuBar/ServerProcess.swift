@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// The .NET server as a child process: started from the bundle, logged to ~/Library/Logs, stopped on quit.
@@ -17,6 +18,10 @@ final class ServerProcess {
     private var process: Process?
     private var stopping = false
 
+    /// Port chosen in the busy-port dialog. Passed on the command line so the server uses it even
+    /// when saving it to appsettings.json failed (command line beats the file in ASP.NET config).
+    var uiPortOverride: Int?
+
     /// Called on the main thread when the server exits without us asking for it.
     var onUnexpectedExit: ((Int32) -> Void)?
 
@@ -31,7 +36,9 @@ final class ServerProcess {
         p.executableURL = Self.executable
         p.currentDirectoryURL = Self.executable.deletingLastPathComponent()
         // The shell opens the browser itself (not at login); the server follows us down if we crash.
-        p.arguments = ["--no-browser", "--parent-pid=\(getpid())"]
+        var arguments = ["--no-browser", "--parent-pid=\(getpid())"]
+        if let port = uiPortOverride { arguments.append("--UiPort=\(port)") }
+        p.arguments = arguments
         p.standardOutput = log
         p.standardError = log
         p.terminationHandler = { [weak self] proc in
