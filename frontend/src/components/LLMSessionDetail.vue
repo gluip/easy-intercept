@@ -6,7 +6,10 @@ import { calcCost, formatCost } from "../utils/llm-cost";
 import { isStreamingResponse, parseOpenAIStream, parseAnthropicStream, parseCopilotResponsesStream, isOpenAIResponsesRequest, parseOpenAIResponses } from "../utils/llm-stream-parser";
 import { isGeminiInteractionsRequest, parseGeminiInteractionsRequest, parseGeminiInteractionsResponse, geminiInteractionsStepsToParts } from "../utils/gemini-interactions";
 import type { GPart, GTurn, ToolDef, ParsedLLM } from "../utils/llm-types";
+import { partMedia, type LLMMedia } from "../utils/llm-images";
+import { geminiImageOutputTokens } from "../utils/llm-usage";
 import ToolPayload from "./ToolPayload.vue";
+import PartMedia from "./PartMedia.vue";
 
 const props = defineProps<{
   session: ProxySession;
@@ -297,6 +300,7 @@ const parsed = computed((): ParsedLLM | null => {
         responseTokens: u.candidatesTokenCount ?? 0,
         cachedTokens: u.cachedContentTokenCount ?? 0,
         thoughtTokens: u.thoughtsTokenCount ?? 0,
+        imageTokens: geminiImageOutputTokens(u),
         finishReason: cand?.finishReason ?? "",
       };
     }
@@ -426,6 +430,7 @@ const cost = computed(() => {
     parsed.value.responseTokens,
     parsed.value.cachedTokens,
     parsed.value.thoughtTokens,
+    parsed.value.imageTokens,
   );
 });
 // ── Expand / collapse ──────────────────────────────────────
@@ -444,17 +449,30 @@ function isOpen(key: string) {
 
 // ── Helpers ────────────────────────────────────────────────
 
+// Validating a multi-megabyte base64 image is too slow to redo on every render
+const mediaCache = new WeakMap<GPart, LLMMedia | null>();
+function mediaOf(part: GPart): LLMMedia | null {
+  let media = mediaCache.get(part);
+  if (media === undefined) {
+    media = partMedia(part);
+    mediaCache.set(part, media);
+  }
+  return media;
+}
+
+function isVisible(p: GPart): boolean {
+  return !!(p.text || p.thinking || p.functionCall || p.functionResponse || mediaOf(p));
+}
+
 // Returns true if the turn has any displayable parts
 function hasContent(parts: GPart[]): boolean {
-  return parts.some((p) => p.text || p.thinking || p.functionCall || p.functionResponse);
+  return parts.some(isVisible);
 }
 
 // Label for the turn's role indicator
 function turnLabel(turn: GTurn): "user" | "assistant" | "tool results" {
   if (turn.role === "model") return "assistant";
-  const visible = turn.parts.filter(
-    (p) => p.text || p.thinking || p.functionCall || p.functionResponse,
-  );
+  const visible = turn.parts.filter(isVisible);
   if (visible.length > 0 && visible.every((p) => !!p.functionResponse)) {
     return "tool results";
   }
@@ -512,6 +530,13 @@ function argPreview(args: Record<string, unknown> | undefined): string {
           </span>
           <span class="pill pill-response" title="Response tokens">
             ↓ {{ parsed.responseTokens.toLocaleString() }}
+          </span>
+          <span
+            v-if="parsed.imageTokens"
+            class="pill pill-image"
+            title="Image tokens, part of the response tokens and billed at the image rate"
+          >
+            🖼 {{ parsed.imageTokens.toLocaleString() }}
           </span>
           <span class="pill pill-duration" title="Request duration">{{ session.durationMs }}ms</span>
           <span
@@ -591,6 +616,11 @@ function argPreview(args: Record<string, unknown> | undefined): string {
                   :value="part.functionCall.args"
                 />
               </div>
+              <PartMedia
+                v-else-if="mediaOf(part)"
+                :media="mediaOf(part)!"
+                :index="pIdx"
+              />
             </template>
           </div>
         </div>
@@ -662,6 +692,13 @@ function argPreview(args: Record<string, unknown> | undefined): string {
                     :value="part.functionResponse.response"
                   />
                 </div>
+
+                <!-- Image / file -->
+                <PartMedia
+                  v-else-if="mediaOf(part)"
+                  :media="mediaOf(part)!"
+                  :index="pIdx"
+                />
               </template>
             </div>
           </div>
@@ -740,6 +777,10 @@ function argPreview(args: Record<string, unknown> | undefined): string {
 .pill-response {
   background: #3a2e1e;
   color: #dcdcaa;
+}
+.pill-image {
+  background: #1e2e3a;
+  color: #9cdcfe;
 }
 .pill-duration {
   background: #2a2a2a;

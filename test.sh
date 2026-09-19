@@ -105,6 +105,42 @@ else
   fail "Session count did not grow after a proxied request"
 fi
 
+# --- LLM image responses ---
+# Gemini image models return the picture as base64 inside the JSON body. The UI can only
+# draw it if that body reaches the session store byte for byte, so serve one through a
+# temporary auto-responder rule (no API key needed) and compare what comes back.
+
+IMG_URL="http://generativelanguage.googleapis.com/v1beta/models/smoke-test-image:generateContent"
+IMG_B64="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+IMG_BODY="{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"inlineData\":{\"mimeType\":\"image/png\",\"data\":\"$IMG_B64\"}}]},\"finishReason\":\"STOP\"}],\"modelVersion\":\"smoke-test-image\"}"
+IMG_RULE=$(node -e "console.log(JSON.stringify({ name: 'smoke test: gemini image', method: 'POST', url: process.argv[1],
+  responseStatus: 200, responseHeaders: { 'Content-Type': 'application/json; charset=UTF-8' }, responseBody: process.argv[2] }))" \
+  "$IMG_URL" "$IMG_BODY")
+
+RULE_ID=$(curl -sf --max-time 3 -H "Content-Type: application/json" -d "$IMG_RULE" "$API/api/auto-responders" | json "d.id")
+if [[ -n "$RULE_ID" ]]; then
+  GOT=$(curl -sf --max-time 10 -x "$PROXY" -H "Content-Type: application/json" \
+    -d '{"contents":[{"parts":[{"text":"a single pixel"}]}]}' "$IMG_URL" \
+    | json "d.candidates[0].content.parts[0].inlineData.data")
+  if [[ "$GOT" == "$IMG_B64" ]]; then
+    pass "Image response reaches the client intact"
+  else
+    fail "Image response was altered on its way to the client"
+  fi
+
+  STORED=$(curl -sf --max-time 3 "$API/api/sessions" \
+    | json "JSON.parse(d.filter(s => s.url === '$IMG_URL').pop().responseBody).candidates[0].content.parts[0].inlineData.data")
+  if [[ "$STORED" == "$IMG_B64" ]]; then
+    pass "Image response stored intact for the UI"
+  else
+    fail "Stored image response is missing or altered"
+  fi
+
+  check "Temporary image rule removed" curl -sf --max-time 3 -X DELETE "$API/api/auto-responders/$RULE_ID"
+else
+  fail "Could not create the temporary image auto-responder rule"
+fi
+
 # --- CA certificate ---
 
 CA_FILE=$(mktemp)

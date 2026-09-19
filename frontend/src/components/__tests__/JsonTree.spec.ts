@@ -47,3 +47,24 @@ describe("JsonTree JSON-in-string expansion", () => {
     expect(html).toContain(">60<");
   });
 });
+
+describe("JsonTree image preview", () => {
+  const data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+  it("shows a thumbnail next to base64 data whose sibling says it is an image", async () => {
+    const html = await render({ data: { inlineData: { mimeType: "image/png", data } }, forceOpen: true });
+    expect(html).toContain(`<img class="j-thumb" src="data:image/png;base64,${data}"`);
+  });
+
+  it("understands the snake_case spelling", async () => {
+    const html = await render({ data: { mime_type: "image/jpeg", data }, forceOpen: true });
+    expect(html).toContain(`src="data:image/jpeg;base64,${data}"`);
+  });
+
+  it("leaves other data fields alone", async () => {
+    expect(await render({ data: { mimeType: "application/pdf", data }, forceOpen: true })).not.toContain("<img");
+    expect(await render({ data: { data }, forceOpen: true })).not.toContain("<img");
+    expect(await render({ data: { mimeType: "image/png", data: "not base64!" }, forceOpen: true })).not.toContain("<img");
+    expect(await render({ data: { mimeType: "image/png", other: data }, forceOpen: true })).not.toContain("<img");
+  });
+});

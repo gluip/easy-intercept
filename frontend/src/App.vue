@@ -122,7 +122,7 @@ const selectionStats = computed(() => {
     const { model, promptTokens: p, responseTokens: r, cachedTokens: c, thoughtTokens: t } = usage;
     promptTokens  += p; responseTokens += r;
     cachedTokens  += c; thoughtTokens  += t;
-    const cost = calcCost(provider, model, p, r, c, t);
+    const cost = calcCost(provider, model, p, r, c, t, usage.imageTokens);
     if (cost) totalCost += cost.total;
     llmCount++;
   }

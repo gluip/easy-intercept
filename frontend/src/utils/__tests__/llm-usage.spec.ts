@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ProxySession } from "../../types";
 import { loadSession } from "./helpers";
-import { extractLLMUsage } from "../llm-usage";
+import { extractLLMUsage, geminiImageOutputTokens } from "../llm-usage";
 import { calcCost, formatCost } from "../llm-cost";
 
 function fakeSession(url: string, requestBody: unknown, responseBody: unknown): ProxySession {
@@ -67,7 +67,7 @@ describe("extractLLMUsage - existing providers", () => {
     );
     expect(extractLLMUsage(s)).toEqual({
       model: "gemini-3.5-flash",
-      promptTokens: 100, responseTokens: 20, cachedTokens: 40, thoughtTokens: 5,
+      promptTokens: 100, responseTokens: 20, cachedTokens: 40, thoughtTokens: 5, imageTokens: 0,
     });
   });
 
@@ -130,5 +130,59 @@ describe("extractLLMUsage - existing providers", () => {
     expect(
       extractLLMUsage(fakeSession("https://api.anthropic.com/v1/messages", "{}", "<html>502</html>")),
     ).toBeNull();
+  });
+});
+
+describe("Gemini image model cost", () => {
+  it("reads the image share of the answer from candidatesTokensDetails", () => {
+    const usage = extractLLMUsage(loadSession("gemini-image-generate.json"))!;
+    expect(usage).toMatchObject({
+      model: "gemini-3.1-flash-image",
+      promptTokens: 271, responseTokens: 1302, imageTokens: 1290,
+    });
+  });
+
+  it("sums IMAGE entries and ignores everything else", () => {
+    expect(geminiImageOutputTokens({
+      candidatesTokensDetails: [
+        { modality: "IMAGE", tokenCount: 1120 },
+        { modality: "TEXT", tokenCount: 40 },
+        { modality: "IMAGE", tokenCount: 1120 },
+      ],
+    })).toBe(2240);
+    expect(geminiImageOutputTokens({ candidatesTokensDetails: [{ modality: "IMAGE" }] })).toBe(0);
+    expect(geminiImageOutputTokens({ candidatesTokenCount: 20 })).toBe(0);
+    expect(geminiImageOutputTokens(undefined)).toBe(0);
+  });
+
+  it("bills image tokens at the image rate and the rest as text", () => {
+    const u = extractLLMUsage(loadSession("gemini-image-generate.json"))!;
+    const cost = calcCost("gemini", u.model, u.promptTokens, u.responseTokens, u.cachedTokens, u.thoughtTokens, u.imageTokens)!;
+    // 271 in @ $0.50/M; 1290 image @ $60/M + 12 text @ $3/M
+    expect(cost.inputCost).toBeCloseTo(0.0001355, 8);
+    expect(cost.outputCost).toBeCloseTo(0.0774 + 0.000036, 8);
+    expect(formatCost(cost)).toBe("$0.078");
+  });
+
+  it("prices a 1K image as published: $0.067 on 3.1 Flash Image, $0.134 on 3 Pro Image", () => {
+    expect(calcCost("gemini", "gemini-3.1-flash-image", 0, 1120, 0, 0, 1120)!.total).toBeCloseTo(0.0672, 6);
+    expect(calcCost("gemini", "gemini-3-pro-image", 0, 1120, 0, 0, 1120)!.total).toBeCloseTo(0.1344, 6);
+    expect(calcCost("gemini", "gemini-3.1-flash-lite-image", 0, 1120, 0, 0, 1120)!.total).toBeCloseTo(0.0336, 6);
+    expect(calcCost("gemini", "gemini-2.5-flash-image", 0, 1290, 0, 0, 1290)!.total).toBeCloseTo(0.0387, 6);
+  });
+
+  it("does not let the image models shadow their text siblings", () => {
+    // 1M output tokens each, no images
+    expect(calcCost("gemini", "gemini-3.1-flash", 0, 1_000_000, 0, 0)!.total).toBeCloseTo(3.0, 6);
+    expect(calcCost("gemini", "gemini-3.1-flash-lite", 0, 1_000_000, 0, 0)!.total).toBeCloseTo(1.5, 6);
+    expect(calcCost("gemini", "gemini-3.1-flash-image", 0, 1_000_000, 0, 0)!.total).toBeCloseTo(3.0, 6);
+  });
+
+  it("falls back to the text rate for image tokens on a model without an image rate", () => {
+    expect(calcCost("gemini", "gemini-3.1-flash", 0, 1000, 0, 0, 1000)!.total).toBeCloseTo(0.003, 8);
+  });
+
+  it("never bills more image tokens than the answer has", () => {
+    expect(calcCost("gemini", "gemini-3.1-flash-image", 0, 100, 0, 0, 5000)!.total).toBeCloseTo(0.006, 8);
   });
 });

@@ -23,6 +23,7 @@ Free, open source, and runs great on both Windows and macOS. If something isn't 
 - **Streaming reconstruction** — reassembles SSE/streamed responses (including fragmented tool-call arguments and Anthropic "thinking" blocks) so streamed and non-streamed traffic look identical in the UI.
 - **Built-in cost & token accounting** — per-model pricing tables for every major provider, computed client-side from the intercepted token usage. No extra API calls, no external service.
 - **Chat transcript view** — normalizes all four providers into one readable conversation: token pills (prompt/cached/thinking/response/cost), collapsible tool-call and tool-result blocks, and a schema panel for declared tools. Falls back to the raw payload if anything fails to parse.
+- **Images in the transcript** — Gemini image models (`gemini-*-image`) answer with base64 inside the JSON. The generated picture, and any image sent along in the request, is drawn in the conversation with its type, size and a download link; the JSON tree shows a thumbnail next to the base64.
 - **Session list superpowers for LLM traffic** — an "LLM only" filter with dedicated Tools/Results/Cost columns, an inline chat preview right in the list, and automatic color-grouping of requests that belong to the same multi-turn conversation.
 
 ### 🛠️ General session tools
