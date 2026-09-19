@@ -2,6 +2,7 @@
 import { ref, computed } from "vue";
 import JsonTree from "./JsonTree.vue";
 import { parseJsonString } from "../utils/json-view";
+import { imageDataUrl } from "../utils/llm-images";
 
 const props = withDefaults(
   defineProps<{
@@ -10,6 +11,7 @@ const props = withDefaults(
     forceOpen?: boolean; // when set, overrides the size-based default
     autoJson?: boolean; // expand strings holding JSON without a click
     trailingComma?: boolean; // separator from the next sibling, drawn by this node
+    previewSrc?: string; // image this string encodes, worked out by the parent object
   }>(),
   // Vue casts an absent boolean prop to false; keep "not set" distinguishable
   { forceOpen: undefined },
@@ -32,6 +34,14 @@ const objKeys = computed(() =>
 const arrLen = computed(() =>
   nodeType.value === "array" ? (props.data as unknown[]).length : 0,
 );
+
+// `{ mimeType: "image/png", data: "<base64>" }` (Gemini inlineData and the like):
+// the base64 is unreadable, so its `data` entry gets a thumbnail.
+const imageSrc = computed(() => {
+  if (nodeType.value !== "object") return null;
+  const obj = props.data as Record<string, unknown>;
+  return imageDataUrl(obj.mimeType ?? obj.mime_type, obj.data);
+});
 
 const childCount = computed(() =>
   nodeType.value === "object" ? objKeys.value.length : arrLen.value,
@@ -98,6 +108,7 @@ const isLong = computed(() => strVal.value.length > MAX_LEN);
       ><button v-if="isLong && !showFull" class="j-btn" @click.stop="showFull = true"
         >show all</button
       >
+      <img v-if="previewSrc" class="j-thumb" :src="previewSrc" alt="image preview" />
     </template>
     <button
       v-if="isExpandableAsJson"
@@ -138,6 +149,7 @@ const isLong = computed(() => strVal.value.length > MAX_LEN);
             :force-open="forceOpen"
             :auto-json="autoJson"
             :trailing-comma="i < objKeys.length - 1"
+            :preview-src="key === 'data' && imageSrc ? imageSrc : undefined"
           />
         </div>
       </div>
@@ -263,6 +275,15 @@ const isLong = computed(() => strVal.value.length > MAX_LEN);
 }
 .j-btn:hover {
   background: #3e3e42;
+}
+
+.j-thumb {
+  display: block;
+  max-width: 240px;
+  max-height: 160px;
+  margin: 4px 0;
+  border: 1px solid #3e3e42;
+  border-radius: 2px;
 }
 
 .j-nested {

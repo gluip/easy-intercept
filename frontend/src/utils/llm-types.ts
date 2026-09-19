@@ -7,6 +7,9 @@ export interface GPart {
   functionResponse?: { name: string; response: unknown };
   thoughtSignature?: string;
   thinking?: string;
+  // Media; read these through partMedia(), which also accepts the snake_case spelling.
+  inlineData?: { mimeType?: string; data?: string };
+  fileData?: { mimeType?: string; fileUri?: string };
 }
 
 export interface GTurn {
@@ -31,6 +34,7 @@ export interface ParsedLLM {
   responseTokens: number;
   cachedTokens: number;
   thoughtTokens: number;
+  imageTokens?: number; // part of responseTokens that is generated images
   finishReason: string;
   reasoningEffort?: string;
 }

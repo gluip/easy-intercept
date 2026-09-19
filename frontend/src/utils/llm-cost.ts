@@ -1,11 +1,14 @@
-// Pricing per million tokens (USD), sourced May 2026
-// Gemini: https://ai.google.dev/pricing
+// Pricing per million tokens (USD), sourced May 2026 (Gemini image models: September 2026)
+// Gemini: https://ai.google.dev/gemini-api/docs/pricing
 // Anthropic: https://platform.claude.com/docs/en/about-claude/pricing
 
 export interface ModelPricing {
   inputPerMTok: number;
   outputPerMTok: number;
   cachedPerMTok: number; // cache read price
+  // Image models bill generated images at their own, much higher rate; the text and
+  // thinking tokens of the same answer stay on outputPerMTok.
+  imageOutputPerMTok?: number;
 }
 
 // Ordered longest-prefix-first so more specific models match first
@@ -16,6 +19,13 @@ const GEMINI_PRICING: Array<[string, ModelPricing]> = [
   ["gemini-3.7-flash",      { inputPerMTok: 0.75,  outputPerMTok: 3.75,  cachedPerMTok: 0.075  }],
   ["gemini-3.6-flash",      { inputPerMTok: 0.75,  outputPerMTok: 3.75,  cachedPerMTok: 0.075  }],
   ["gemini-3.5-flash",      { inputPerMTok: 1.50,  outputPerMTok: 9.00,  cachedPerMTok: 0.15   }],
+  // Image models ("Nano Banana"). No context caching, so cached reads cost as input.
+  // A 1K image is 1120 output tokens: $0.067 on 3.1 Flash Image, $0.134 on 3 Pro Image.
+  ["gemini-3.1-flash-lite-image", { inputPerMTok: 0.25, outputPerMTok: 1.50,  cachedPerMTok: 0.25, imageOutputPerMTok: 30.00  }],
+  ["gemini-3.1-flash-image",      { inputPerMTok: 0.50, outputPerMTok: 3.00,  cachedPerMTok: 0.50, imageOutputPerMTok: 60.00  }],
+  ["gemini-3-pro-image",          { inputPerMTok: 2.00, outputPerMTok: 12.00, cachedPerMTok: 2.00, imageOutputPerMTok: 120.00 }],
+  // Listed as $0.039 per image, which is 1290 tokens at $30/M
+  ["gemini-2.5-flash-image",      { inputPerMTok: 0.30, outputPerMTok: 2.50,  cachedPerMTok: 0.30, imageOutputPerMTok: 30.00  }],
   ["gemini-3.1-pro",        { inputPerMTok: 2.00,  outputPerMTok: 12.00, cachedPerMTok: 0.20   }],
   ["gemini-3.1-flash-lite", { inputPerMTok: 0.25,  outputPerMTok: 1.50,  cachedPerMTok: 0.025  }],
   ["gemini-3.1-flash",      { inputPerMTok: 0.50,  outputPerMTok: 3.00,  cachedPerMTok: 0.05   }],
@@ -92,6 +102,8 @@ export interface CostBreakdown {
  * the base input cost and price them separately.
  * For Anthropic: promptTokens = non-cached input; cachedTokens = cache reads.
  * thoughtTokens (Gemini) are billed as output tokens.
+ * imageOutputTokens (Gemini image models) is the part of responseTokens that is
+ * generated images; it is billed at the model's image rate when it has one.
  */
 export function calcCost(
   provider: "gemini" | "anthropic" | "openai" | "copilot",
@@ -100,6 +112,7 @@ export function calcCost(
   responseTokens: number,
   cachedTokens: number,
   thoughtTokens: number,
+  imageOutputTokens = 0,
 ): CostBreakdown | null {
   let pricing: ModelPricing | null = null;
 
@@ -120,10 +133,13 @@ export function calcCost(
   if (provider === "gemini") {
     // promptTokens includes cachedTokens
     const nonCachedInput = Math.max(0, promptTokens - cachedTokens);
-    const totalOutput = responseTokens + thoughtTokens;
+    const imageOutput = Math.min(Math.max(0, imageOutputTokens), responseTokens);
+    const textOutput = responseTokens - imageOutput + thoughtTokens;
     const inputCost  = (nonCachedInput / M) * pricing.inputPerMTok;
     const cachedCost = (cachedTokens   / M) * pricing.cachedPerMTok;
-    const outputCost = (totalOutput    / M) * pricing.outputPerMTok;
+    const outputCost =
+      (textOutput  / M) * pricing.outputPerMTok +
+      (imageOutput / M) * (pricing.imageOutputPerMTok ?? pricing.outputPerMTok);
     return { inputCost, outputCost, cachedCost, total: inputCost + outputCost + cachedCost };
   } else if (provider === "openai") {
     // promptTokens = total input (includes cached); cachedTokens = subset already cached

@@ -19,6 +19,18 @@ export interface LLMUsage {
   responseTokens: number;
   cachedTokens: number;
   thoughtTokens: number;
+  /** The part of responseTokens that is generated images (Gemini image models). */
+  imageTokens?: number;
+}
+
+/** Image tokens in a Gemini usageMetadata's per-modality breakdown of the answer. */
+export function geminiImageOutputTokens(usageMetadata: unknown): number {
+  const details = (usageMetadata as { candidatesTokensDetails?: unknown } | null | undefined)
+    ?.candidatesTokensDetails;
+  if (!Array.isArray(details)) return 0;
+  return details
+    .filter((d) => d?.modality === "IMAGE")
+    .reduce((sum, d) => sum + (typeof d.tokenCount === "number" ? d.tokenCount : 0), 0);
 }
 
 /** Extract model + token counts from an LLM session, or null if it isn't one / can't be parsed. */
@@ -78,6 +90,7 @@ export function extractLLMUsage(session: ProxySession): LLMUsage | null {
         responseTokens: u.candidatesTokenCount ?? 0,
         cachedTokens: u.cachedContentTokenCount ?? 0,
         thoughtTokens: u.thoughtsTokenCount ?? 0,
+        imageTokens: geminiImageOutputTokens(u),
       };
     }
 

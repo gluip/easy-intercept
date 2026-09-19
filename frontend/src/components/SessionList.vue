@@ -10,6 +10,7 @@ import { isGraphQLRequest, parseGraphQLRequest, parseGraphQLResponse, getOperati
 import { calcCost, formatCost } from "../utils/llm-cost";
 import { extractLLMUsage } from "../utils/llm-usage";
 import { isGeminiInteractionsRequest, parseGeminiInteractionsResponse, geminiInteractionsPreviewText, geminiInteractionsToolCallNames, geminiInteractionsTrailingResults } from "../utils/gemini-interactions";
+import { mediaPreviewText } from "../utils/llm-images";
 import { detectRequestKind, REQUEST_KIND_LABELS, REQUEST_KIND_ICONS, type RequestKind } from "../utils/request-kind-detection";
 
 const props = defineProps<{
@@ -488,9 +489,10 @@ function llmPreview(s: ProxySession): string | null {
 
     let text: string | undefined;
     if (provider === "gemini") {
-      text = res.candidates?.[0]?.content?.parts?.find(
-        (p: { text?: string }) => p.text,
-      )?.text;
+      const parts = res.candidates?.[0]?.content?.parts;
+      text = parts?.find((p: { text?: string }) => p.text)?.text;
+      // Image models often answer with an image and no text at all
+      if (!text?.trim()) text = mediaPreviewText(parts) ?? undefined;
     } else if (provider === "anthropic") {
       text = res.content?.find(
         (b: { type: string; text?: string }) => b.type === "text",
@@ -768,6 +770,7 @@ function llmCost(s: ProxySession): string | null {
     usage.responseTokens,
     usage.cachedTokens,
     usage.thoughtTokens,
+    usage.imageTokens,
   );
   return cost ? formatCost(cost) : null;
 }
